@@ -37,7 +37,7 @@ TODO(antonin): add wrapper scripts for docker commands
 
 ## Available commands
 
-`tables`, actions`, `action_profiles`, `counters`, `direct_counters`, `meters`,
+`tables`, `actions`, `action_profiles`, `counters`, `direct_counters`, `meters`,
 `direct_meters` (named after the P4Info message fields) to query information
 about P4Info objects.
 
