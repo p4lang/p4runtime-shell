@@ -1,0 +1,457 @@
+pkg_info {
+  arch: "v1model"
+}
+tables {
+  preamble {
+    id: 33582705
+    name: "ExactOne"
+    alias: "ExactOne"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  direct_resource_ids: 318768298
+  direct_resource_ids: 352326600
+  size: 512
+}
+tables {
+  preamble {
+    id: 33567650
+    name: "LpmOne"
+    alias: "LpmOne"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: LPM
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33584148
+    name: "TernaryOne"
+    alias: "TernaryOne"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: TERNARY
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33562808
+    name: "TernaryTwo"
+    alias: "TernaryTwo"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: TERNARY
+  }
+  match_fields {
+    id: 2
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: TERNARY
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33603558
+    name: "RangeOne"
+    alias: "RangeOne"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: RANGE
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33586101
+    name: "MixMany"
+    alias: "MixMany"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  match_fields {
+    id: 2
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: LPM
+  }
+  match_fields {
+    id: 3
+    name: "header_test.field20"
+    bitwidth: 20
+    match_type: TERNARY
+  }
+  match_fields {
+    id: 4
+    name: "header_test.$valid$"
+    bitwidth: 1
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16827074
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33586946
+    name: "IndirectWS"
+    alias: "IndirectWS"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field32"
+    bitwidth: 32
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  implementation_id: 285237193
+  size: 512
+}
+tables {
+  preamble {
+    id: 33574985
+    name: "ExactOneNonAligned"
+    alias: "ExactOneNonAligned"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field12"
+    bitwidth: 12
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33618629
+    name: "ConstTable"
+    alias: "ConstTable"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 1024
+  is_const_table: true
+}
+tables {
+  preamble {
+    id: 33561884
+    name: "ActionsAnnotationsTable"
+    alias: "ActionsAnnotationsTable"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+    annotations: "@tableonly"
+    scope: TABLE_ONLY
+  }
+  action_refs {
+    id: 16827074
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+}
+tables {
+  preamble {
+    id: 33562613
+    name: "ConstDefaultActionTable"
+    alias: "ConstDefaultActionTable"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16827074
+  }
+  action_refs {
+    id: 16809468
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  const_default_action_id: 16809468
+  size: 512
+}
+tables {
+  preamble {
+    id: 33599229
+    name: "IdleTimeoutTable"
+    alias: "IdleTimeoutTable"
+  }
+  match_fields {
+    id: 1
+    name: "header_test.field16"
+    bitwidth: 16
+    match_type: EXACT
+  }
+  action_refs {
+    id: 16783703
+  }
+  action_refs {
+    id: 16809468
+  }
+  action_refs {
+    id: 16800567
+    annotations: "@defaultonly"
+    scope: DEFAULT_ONLY
+  }
+  size: 512
+  idle_timeout_behavior: NOTIFY_CONTROL
+}
+actions {
+  preamble {
+    id: 16800567
+    name: "NoAction"
+    alias: "NoAction"
+  }
+}
+actions {
+  preamble {
+    id: 16783703
+    name: "actionA"
+    alias: "actionA"
+  }
+  params {
+    id: 1
+    name: "param"
+    bitwidth: 48
+  }
+}
+actions {
+  preamble {
+    id: 16809468
+    name: "actionB"
+    alias: "actionB"
+  }
+  params {
+    id: 1
+    name: "param"
+    bitwidth: 8
+  }
+}
+actions {
+  preamble {
+    id: 16827074
+    name: "actionC"
+    alias: "actionC"
+  }
+}
+action_profiles {
+  preamble {
+    id: 285237193
+    name: "ActProfWS"
+    alias: "ActProfWS"
+  }
+  table_ids: 33586946
+  with_selector: true
+  size: 128
+  max_group_size: 200
+}
+counters {
+  preamble {
+    id: 302055013
+    name: "CounterA"
+    alias: "CounterA"
+  }
+  spec {
+    unit: PACKETS
+  }
+  size: 1024
+}
+direct_counters {
+  preamble {
+    id: 318768298
+    name: "ExactOne_counter"
+    alias: "ExactOne_counter"
+  }
+  spec {
+    unit: PACKETS
+  }
+  direct_table_id: 33582705
+}
+meters {
+  preamble {
+    id: 335597387
+    name: "MeterA"
+    alias: "MeterA"
+  }
+  spec {
+    unit: PACKETS
+  }
+  size: 1024
+}
+direct_meters {
+  preamble {
+    id: 352326600
+    name: "ExactOne_meter"
+    alias: "ExactOne_meter"
+  }
+  spec {
+    unit: BYTES
+  }
+  direct_table_id: 33582705
+}
+digests {
+  preamble {
+    id: 385901477
+    name: "test_digest_t"
+    alias: "test_digest_t"
+  }
+  type_spec {
+    struct {
+      name: "test_digest_t"
+    }
+  }
+}
+type_info {
+  structs {
+    key: "test_digest_t"
+    value {
+      members {
+        name: "f48"
+        type_spec {
+          bitstring {
+            bit {
+              bitwidth: 48
+            }
+          }
+        }
+      }
+      members {
+        name: "f12"
+        type_spec {
+          bitstring {
+            bit {
+              bitwidth: 12
+            }
+          }
+        }
+      }
+    }
+  }
+}

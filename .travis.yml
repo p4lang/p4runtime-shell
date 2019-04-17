@@ -1,0 +1,16 @@
+sudo: required
+
+dist: trusty
+
+language: generic
+
+services:
+  - docker
+
+install:
+  - docker build -t p4lang/p4runtime-sh .
+  - docker build -t p4lang/p4runtime-sh-dev  -f Dockerfile.dev .
+
+script:
+  - docker run -ti p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && flake8 p4runtime_sh"
+  - docker run -ti p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && nose2 p4runtime_sh"

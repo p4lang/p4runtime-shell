@@ -1,0 +1,3 @@
+[submodule "p4runtime"]
+	path = p4runtime
+	url = https://github.com/p4lang/p4runtime.git
