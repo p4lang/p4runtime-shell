@@ -15,7 +15,7 @@ We recommend that you download the Docker image (~200MB) and use it, but you can
 also build the image directly with `docker build -t p4lang/p4runtime-sh .`.
 
 Run the shell as follows:
-```
+```bash
 [sudo] docker run -ti p4lang/p4runtime-sh \
   --grpc-addr <server IP>:<server port> \
   --device-id 0 --election-id 0,1
@@ -24,8 +24,8 @@ Run the shell as follows:
 The above command will retrieve the forwarding pipeline configuration from the
 P4Runtime server. You can also push a forwarding pipeline configuration with the
 shell (you will need to mount the directory containing the P4Info and binary
-device config into the docker):
-```
+device config in the docker):
+```bash
 [sudo] docker run -ti -v /tmp/:/tmp/ p4lang/p4runtime-sh \
   --grpc-addr <server IP>:<server port> \
   --device-id 0 --election-id 0,1 --config /tmp/p4info.txt,/tmp/bmv2.json
@@ -33,7 +33,19 @@ device config into the docker):
 The above command assumes that the P4Info (p4info.txt) and the binary device
 config (bmv2.json) are under /tmp/.
 
-TODO(antonin): add wrapper scripts for docker commands
+To make the process more convenient, we provide a wrapper script, which takes
+care of running the docker (including mounting the P4Info and binary device
+config files in the docker if needed):
+```bash
+[sudo] ./p4runtime-sh-docker --grpc-addr <server IP>:<server port> \
+  --device-id 0 --election-id 0,1 \
+  --config <path to p4info>,<path to binary config>
+```
+
+*If you are a Linux user, you can follow this
+ [guide](https://docs.docker.com/install/linux/linux-postinstall/) to run docker
+ commands without `sudo`. You will be able to use `p4runtime-sh-docker` as a
+ non-privileged user.*
 
 ## Available commands
 

@@ -622,7 +622,10 @@ class MyPrompt(Prompts):
                 (Token.PrompSeparator, ' >>> ')]
 
 
-def main():
+FwdPipeConfig = namedtuple('FwdPipeConfig', ['p4info', 'bin'])
+
+
+def get_arg_parser():
     def election_id(arg):
         try:
             nums = tuple(int(x) for x in arg.split(','))
@@ -632,8 +635,6 @@ def main():
         except Exception:
             raise argparse.ArgumentError(
                 "Invalid election id, expected <Hi>,<Lo>")
-
-    FwdPipeConfig = namedtuple('FwdPipeConfig', ['p4info', 'bin'])
 
     def pipe_config(arg):
         try:
@@ -645,7 +646,7 @@ def main():
             raise argparse.ArgumentError(
                 "Invalid pipeline config, expected <p4info path>,<binary config path>")
 
-    parser = argparse.ArgumentParser(description='P4Runtime CLI')
+    parser = argparse.ArgumentParser(description='P4Runtime shell')
     parser.add_argument('--device-id',
                         help='Device id',
                         type=int, action='store', default=1)
@@ -660,10 +661,15 @@ def main():
                         metavar='<Hi>,<Lo>',
                         type=election_id, action='store', default=(1, 0))
     parser.add_argument('--config',
-                        help='If you want the CLI to push a pipeline config to the server first',
+                        help='If you want the shell to push a pipeline config to the server first',
                         metavar='<p4info path (text)>,<binary config path>',
                         type=pipe_config, action='store', default=None)
 
+    return parser
+
+
+def main():
+    parser = get_arg_parser()
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
