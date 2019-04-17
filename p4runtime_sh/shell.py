@@ -618,7 +618,7 @@ def Write(input_):
 # see https://ipython.readthedocs.io/en/stable/config/details.html
 class MyPrompt(Prompts):
     def in_prompt_tokens(self, cli=None):
-        return [(Token.Prompt, 'P4Runtime CLI'),
+        return [(Token.Prompt, 'P4Runtime sh'),
                 (Token.PrompSeparator, ' >>> ')]
 
 
