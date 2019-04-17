@@ -1,5 +1,7 @@
 # A shell for P4Runtime
 
+[![Build Status](https://travis-ci.org/p4lang/p4runtime-shell.svg?branch=master)](https://travis-ci.org/p4lang/p4runtime-shell)
+
 **This is a work in progress and the number of supported P4Runtime features is
   limited.**
 
