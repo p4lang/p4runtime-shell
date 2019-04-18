@@ -65,7 +65,7 @@ Here is some of what you can do when using p4runtime-sh with ONF's
 
 ```python
 *** Welcome to the IPython shell for P4Runtime ***
-P4Runtime CLI >>> tables
+P4Runtime sh >>> tables
 FabricEgress.egress_next.egress_vlan
 FabricIngress.acl.acl
 FabricIngress.filtering.fwd_classifier
@@ -78,7 +78,7 @@ FabricIngress.next.multicast
 FabricIngress.next.next_vlan
 FabricIngress.next.xconnect
 
-P4Runtime CLI >>> tables["FabricIngress.forwarding.routing_v4"]
+P4Runtime sh >>> tables["FabricIngress.forwarding.routing_v4"]
 Out[2]:
 preamble {
   id: 33562650
@@ -92,49 +92,38 @@ match_fields {
   match_type: LPM
 }
 action_refs {
-  id: 16777434
+  id: 16777434 ("FabricIngress.forwarding.set_next_id_routing_v4")
 }
 action_refs {
-  id: 16804187
+  id: 16804187 ("FabricIngress.forwarding.nop_routing_v4")
 }
 action_refs {
-  id: 16819938
+  id: 16819938 ("nop")
   annotations: "@defaultonly"
   scope: DEFAULT_ONLY
 }
-const_default_action_id: 16819938
-direct_resource_ids: 318811107
+const_default_action_id: 16819938 ("nop")
+direct_resource_ids: 318811107 ("FabricIngress.forwarding.routing_v4_counter")
 size: 1024
 
 
-P4Runtime CLI >>> tables["FabricIngress.forwarding.routing_v4"].actions()
-FabricIngress.forwarding.set_next_id_routing_v4
-FabricIngress.forwarding.nop_routing_v4
-nop
+P4Runtime sh >>> te = table_entry["FabricIngress.forwarding.routing_v4"](action="set_next_id_routing_v4")
 
-P4Runtime CLI >>> t = tables["FabricIngress.forwarding.routing_v4"]
-
-P4Runtime CLI >>> t.actions
-FabricIngress.forwarding.set_next_id_routing_v4
-FabricIngress.forwarding.nop_routing_v4
-nop
-
-P4Runtime CLI >>> te =
-table_entry["FabricIngress.forwarding.routing_v4"](action="set_next_id_routing_v4")
-
-P4Runtime CLI >>> te?
+P4Runtime sh >>> te?
 Signature:   te(**kwargs)
 Type:        TableEntry
 String form:
-table_id: 33562650
+table_id: 33562650 ("FabricIngress.forwarding.routing_v4")
 action {
   action {
-    action_id: 16777434
+    action_id: 16777434 ("FabricIngress.forwarding.set_next_id_routing_v4")
   }
 }
 File:        /p4runtime-sh/p4runtime_sh/shell.py
 Docstring:
 An entry for table 'FabricIngress.forwarding.routing_v4'
+
+Use <self>.info to display the P4Info entry for this table.
 
 To set the match key, use <self>.match['<field name>'] = <expr>.
 Type <self>.match? for more details.
@@ -169,7 +158,7 @@ t.modify
 
 For information about how to read table entries, use <self>.read?
 
-P4Runtime CLI >>> te.match?
+P4Runtime sh >>> te.match?
 Type:      MatchKey
 File:      /p4runtime-sh/p4runtime_sh/shell.py
 Docstring:
@@ -191,7 +180,7 @@ If it's inconvenient to use the whole field name, you can use a unique suffix.
 You may also use <self>.set(<f>='<value>')
         (<f> must not include a '.' in this case, but remember that you can use a unique suffix)
 
-P4Runtime CLI >>> te.match["ipv4_dst"] = "10.0.0.0/16"
+P4Runtime sh >>> te.match["ipv4_dst"] = "10.0.0.0/16"
 field_id: 1
 lpm {
   value: "\n\000\000\000"
@@ -199,7 +188,7 @@ lpm {
 }
 
 
-P4Runtime CLI >>> te.action?
+P4Runtime sh >>> te.action?
 Type:      Action
 File:      /p4runtime-sh/p4runtime_sh/shell.py
 Docstring:
@@ -213,39 +202,38 @@ bitwidth: 32
 Set a param value with <self>['<param_name>'] = '<value>'
 You may also use <self>.set(<param_name>='<value>')
 
-P4Runtime CLI >>> te.action["next_id"] = "10"
+P4Runtime sh >>> te.action["next_id"] = "10"
 param_id: 1
 value: "\000\000\000\n"
 
 
-P4Runtime CLI >>> te.insert
+P4Runtime sh >>> te.insert
 
-P4Runtime CLI >>> for te in table_entry["FabricIngress.forwarding.routing_v4"].read():
-             ...:     print(te)
-             ...:
-table_id: 33562650
+P4Runtime sh >>> for te in table_entry["FabricIngress.forwarding.routing_v4"].read():
+            ...:     print(te)
+            ...:
+table_id: 33562650 ("FabricIngress.forwarding.routing_v4")
 match {
-  field_id: 1
+  field_id: 1 ("ipv4_dst")
   lpm {
-    value: "\n\000\000\000"
+    value: "\\x0a\\x00\\x00\\x00"
     prefix_len: 16
   }
 }
 action {
   action {
-    action_id: 16777434
+    action_id: 16777434 ("FabricIngress.forwarding.set_next_id_routing_v4")
     params {
-      param_id: 1
-      value: "\000\000\000\n"
+      param_id: 1 ("None")
+      value: "\\x00\\x00\\x00\\x0a"
     }
   }
 }
 
 
-P4Runtime CLI >>> table_entry["FabricIngress.forwarding.routing_v4"].read(lambda te: te.delete())
+P4Runtime sh >>> table_entry["FabricIngress.forwarding.routing_v4"].read(lambda te: te.delete())
 
-P4Runtime CLI >>> for te in table_entry["FabricIngress.forwarding.routing_v4"].read():
-             ...:     print(te)
-             ...:
+P4Runtime sh >>> table_entry["FabricIngress.forwarding.routing_v4"].read(lambda te: print(te))
 
-P4Runtime CLI >>>
+P4Runtime sh >>>
+```
