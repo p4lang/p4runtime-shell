@@ -25,6 +25,7 @@ import subprocess
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 import p4runtime_sh.shell as sh
+from p4runtime_sh.context import P4Type
 
 
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
@@ -260,3 +261,34 @@ action {
             p4runtime_pb2.Update.INSERT, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+    def test_table_info(self):
+        t = sh.P4Objects(P4Type.table)["ExactOne"]
+        expected = """
+preamble {
+  id: 33582705
+  name: "ExactOne"
+  alias: "ExactOne"
+}
+match_fields {
+  id: 1
+  name: "header_test.field32"
+  bitwidth: 32
+  match_type: EXACT
+}
+action_refs {
+  id: 16783703 ("actionA")
+}
+action_refs {
+  id: 16809468 ("actionB")
+}
+action_refs {
+  id: 16800567 ("NoAction")
+  annotations: "@defaultonly"
+  scope: DEFAULT_ONLY
+}
+direct_resource_ids: 318768298 ("ExactOne_counter")
+direct_resource_ids: 352326600 ("ExactOne_meter")
+size: 512
+"""
+        self.assertIn(str(t), expected)
