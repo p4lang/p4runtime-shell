@@ -120,6 +120,7 @@ class UnitTestCase(BaseTestCase):
 
         self.servicer = P4RuntimeServicer()
         self.servicer.Write = Mock(return_value=p4runtime_pb2.WriteResponse())
+        self.servicer.Read = Mock(return_value=p4runtime_pb2.ReadResponse())
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
         sh.client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
@@ -131,15 +132,21 @@ class UnitTestCase(BaseTestCase):
         sh.client.tear_down()
         super().tearDown()
 
-    def make_write_request_from_table_entry(self, type_, expected_txt):
+    def _make_write_request(self, type_, expected_txt, entity):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
         req.election_id.high = self.election_id[0]
         req.election_id.low = self.election_id[1]
         update = req.updates.add()
         update.type = type_
-        google.protobuf.text_format.Merge(expected_txt, update.entity.table_entry)
+        google.protobuf.text_format.Merge(expected_txt, getattr(update.entity, entity))
         return req
+
+    def make_write_request_from_table_entry(self, type_, expected_txt):
+        return self._make_write_request(type_, expected_txt, 'table_entry')
+
+    def make_write_request_from_counter_entry(self, type_, expected_txt):
+        return self._make_write_request(type_, expected_txt, 'counter_entry')
 
     def test_table_entry_exact(self):
         te = sh.TableEntry("ExactOne")(action="actionA")
@@ -321,3 +328,33 @@ direct_resource_ids: 352326600 ("ExactOne_meter")
 size: 512
 """
         self.assertIn(str(t), expected)
+
+    def test_counter_entry(self):
+        ce = sh.CounterEntry("CounterA")
+        ce.index = 99
+        ce.packet_count = 100
+        expected_entry = """
+counter_id: 302055013
+index {
+  index: 99
+}
+data {
+  packet_count: 100
+}
+"""
+        expected_req = self.make_write_request_from_counter_entry(
+            p4runtime_pb2.Update.MODIFY, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        ce.index = None
+        expected_entry = """
+counter_id: 302055013
+data {
+  packet_count: 100
+}
+"""
+        expected_req = self.make_write_request_from_counter_entry(
+            p4runtime_pb2.Update.MODIFY, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)

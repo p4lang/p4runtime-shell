@@ -769,6 +769,124 @@ For information about how to read table entries, use <self>.read?
         return self._entry
 
 
+class CounterEntry:
+    def __init__(self, counter_name=None):
+        self._init = False
+        if counter_name is None:
+            raise UserError("Please provide name for counter")
+        self.counter_name = counter_name
+        counter_info = P4Objects(P4Type.counter)[counter_name]
+        self._counter_id = counter_info.preamble.id
+        self._entry = p4runtime_pb2.CounterEntry()
+        self._entry.counter_id = self._counter_id
+        self._counter_info = counter_info
+        self.__doc__ = """
+An entry for counter '{}'
+
+Use <self>.info to display the P4Info entry for this counter.
+
+Set the index with <self>.index = <expr>.
+To reset it (e.g. for wildcard read), set it to None.
+
+Access byte count and packet count with <self>.byte_count / <self>.packet_count.
+
+To read from the counter, use <self>.read
+To write to the counter, use <self>.modify
+""".format(counter_name)
+        self._init = True
+
+    def __dir__(self):
+        return ["counter_name", "index", "byte_count", "packet_count",
+                "info", "modify", "read", "msg"]
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "counter_name":
+            raise UserError("Cannot change counter name")
+        if name == "index":
+            if value is None:
+                self._entry.ClearField('index')
+                return
+            if type(value) is not int:
+                raise UserError("index must be an integer")
+            self._entry.index.index = value
+            return
+        if name == "byte_count" or name == "packet_count":
+            if type(value) is not int:
+                raise UserError("{} must be an integer".format(name))
+            setattr(self._entry.data, name, value)
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "index":
+            return self._entry.index.index
+        if name == "byte_count" or name == "packet_count":
+            return getattr(self._entry.data, name)
+        super().__getattr__(name)
+
+    def _write(self, type_):
+        update = p4runtime_pb2.Update()
+        update.type = type_
+        update.entity.counter_entry.CopyFrom(self._entry)
+        client.write_update(update)
+
+    def info(self):
+        """Display P4Info entry for the counter"""
+        return self._counter_info
+
+    def modify(self):
+        logging.debug("Modifying entry")
+        self._write(p4runtime_pb2.Update.MODIFY)
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the index unset).
+        If function is None, returns an iterator. Iterate over it to get all the
+        counter entries (CounterEntry instances) returned by the
+        server. Otherwise, function is applied to all the counter entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
+        """
+        entity = p4runtime_pb2.Entity()
+        entity.counter_entry.CopyFrom(self._entry)
+        iterator = client.read_one(entity)
+
+        def gen(it):
+            for rep in iterator:
+                for entity in rep.entities:
+                    c = CounterEntry(self.counter_name)
+                    c._entry.CopyFrom(entity.counter_entry)
+                    yield c
+
+        if function is None:
+            return gen(iterator)
+        else:
+            for x in gen(iterator):
+                function(x)
+
+    def __str__(self):
+        return str(_repr_pretty_p4runtime(self._entry))
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(_repr_pretty_p4runtime(self._entry))
+
+    def msg(self):
+        return self._entry
+
+
 class P4RuntimeEntityBuilder:
     def __init__(self, obj_type, entity_type, entity_cls):
         self._obj_type = obj_type
@@ -916,6 +1034,7 @@ def main():
         "TableEntry": TableEntry,
         "MatchKey": MatchKey,
         "Action": Action,
+        "CounterEntry": CounterEntry,
         "p4info": context.p4info,
         "Write": Write,
     }
@@ -923,8 +1042,12 @@ def main():
     for obj_type in P4Type:
         user_ns[obj_type.p4info_name] = P4Objects(obj_type)
 
-    user_ns[P4RuntimeEntity.table_entry.name] = P4RuntimeEntityBuilder(
-        P4Type.table, P4RuntimeEntity.table_entry, TableEntry)
+    supported_entities = [
+        (P4RuntimeEntity.table_entry, P4Type.table, TableEntry),
+        (P4RuntimeEntity.counter_entry, P4Type.counter, CounterEntry),
+    ]
+    for entity, p4type, cls in supported_entities:
+        user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
