@@ -26,6 +26,8 @@ from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 import p4runtime_sh.shell as sh
 from p4runtime_sh.context import P4Type
+from p4runtime_sh.utils import UserError
+import nose2.tools
 
 
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
@@ -169,19 +171,24 @@ action {
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
-    def test_table_entry_lpm(self):
+    @nose2.tools.params(("10.0.0.0/16", "\\x0a\\x00\\x00\\x00", 16),
+                        ("10.0.240.0/20", "\\x0a\\x00\\xf0\\x00", 20),
+                        ("10.0.15.0/20", "\\x0a\\x00\\x00\\x00", 20))
+    def test_table_entry_lpm(self, input_, value, length):
         te = sh.TableEntry("LpmOne")(action="actionA")
-        te.match["header_test.field32"] = "10.0.0.0/16"
+        te.match["header_test.field32"] = input_
         te.action["param"] = "aa:bb:cc:dd:ee:ff"
         te.insert()
 
+        # Cannot use format here because it would require escaping all braces,
+        # which would make wiriting tests much more annoying
         expected_entry = """
 table_id: 33567650
 match {
   field_id: 1
   lpm {
-    value: "\\x0a\\x00\\x00\\x00"
-    prefix_len: 16
+    value: "%s"
+    prefix_len: %s
   }
 }
 action {
@@ -193,16 +200,23 @@ action {
     }
   }
 }
-"""
+""" % (value, length)
 
         expected_req = self.make_write_request_from_table_entry(
             p4runtime_pb2.Update.INSERT, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
-    def test_table_entry_ternary(self):
+    def test_table_entry_lpm_dont_care(self):
+        te = sh.TableEntry("LpmOne")
+        with self.assertRaisesRegex(UserError, "LPM don't care match"):
+            te.match["header_test.field32"] = "10.0.0.0/0"
+
+    @nose2.tools.params(("10.0.0.1 &&& 0xff0000ff", "\\x0a\\x00\\x00\\x01", "\\xff\\x00\\x00\\xff"),
+                        ("10.0.0.1 &&& 0xff000000", "\\x0a\\x00\\x00\\x00", "\\xff\\x00\\x00\\x00"))
+    def test_table_entry_ternary(self, input_, value, mask):
         te = sh.TableEntry("TernaryOne")(action="actionA")
-        te.match["header_test.field32"] = "10.0.0.1 &&& 0xff0000ff"
+        te.match["header_test.field32"] = input_
         te.action["param"] = "aa:bb:cc:dd:ee:ff"
         te.insert()
 
@@ -211,8 +225,8 @@ table_id: 33584148
 match {
   field_id: 1
   ternary {
-    value: "\\x0a\\x00\\x00\\x01"
-    mask: "\\xff\\x00\\x00\\xff"
+    value: "%s"
+    mask: "%s"
   }
 }
 action {
@@ -224,12 +238,17 @@ action {
     }
   }
 }
-"""
+""" % (value, mask)
 
         expected_req = self.make_write_request_from_table_entry(
             p4runtime_pb2.Update.INSERT, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+    def test_table_entry_ternary_dont_care(self):
+        te = sh.TableEntry("TernaryOne")
+        with self.assertRaisesRegex(UserError, "ternary don't care match"):
+            te.match["header_test.field32"] = "10.0.0.0&&&0.0.0.0"
 
     def test_table_entry_range(self):
         te = sh.TableEntry("RangeOne")(action="actionA")
@@ -261,6 +280,16 @@ action {
             p4runtime_pb2.Update.INSERT, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+    def test_table_entry_range_dont_care(self):
+        te = sh.TableEntry("RangeOne")
+        with self.assertRaisesRegex(UserError, "range don't care match"):
+            te.match["header_test.field32"] = "0..255.255.255.255"
+
+    def test_table_entry_range_invalid(self):
+        te = sh.TableEntry("RangeOne")
+        with self.assertRaisesRegex(UserError, "Invalid range match"):
+            te.match["header_test.field32"] = "77..22"
 
     def test_table_info(self):
         t = sh.P4Objects(P4Type.table)["ExactOne"]
