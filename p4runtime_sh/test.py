@@ -54,8 +54,8 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
     def StreamChannel(self, request_iterator, context):
         for req in request_iterator:
             if req.HasField('arbitration'):
-                # rep = p4runtime_pb2.StreamMessageResponse()
-                rep = req
+                rep = p4runtime_pb2.StreamMessageResponse()
+                rep.arbitration.CopyFrom(req.arbitration)
                 rep.arbitration.status.code = code_pb2.OK
                 yield rep
 
@@ -131,6 +131,7 @@ class UnitTestCase(BaseTestCase):
 
     def tearDown(self):
         sh.client.tear_down()
+        sh.client = None
         super().tearDown()
 
     def _make_write_request(self, type_, expected_txt, entity):
@@ -370,20 +371,22 @@ class P4RuntimeClientTestCase(BaseTestCase):
         self.servicer = P4RuntimeServicer()
         self.servicer.Write = Mock(return_value=p4runtime_pb2.WriteResponse())
         self.servicer.Read = Mock(return_value=p4runtime_pb2.ReadResponse())
-        self.servicer.StreamChannel = Mock()
+        # Starting with gRPC 1.20.0, the server code checks for the presence of an
+        # experimental_non_blocking
+        # (https://github.com/grpc/grpc/blob/v1.20.0/src/python/grpcio/grpc/_server.py#L532). We
+        # need to make sure it is *not* present.
+        self.servicer.StreamChannel = Mock(spec=[])
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
     def test_arbitration_slave(self):
-        msg = p4runtime_pb2.StreamMessageResponse()
-        msg.arbitration.device_id = self.device_id
-        msg.arbitration.election_id.high = self.election_id[0]
-        msg.arbitration.election_id.low = self.election_id[1]
-        msg.arbitration.status.code = code_pb2.ALREADY_EXISTS
-
-        def stream_channel_generator():
-            yield msg
-
-        self.servicer.StreamChannel.return_value = stream_channel_generator()
+        def StreamChannelMock(request_iterator, context):
+            for req in request_iterator:
+                if req.HasField('arbitration'):
+                    rep = p4runtime_pb2.StreamMessageResponse()
+                    rep.arbitration.CopyFrom(req.arbitration)
+                    rep.arbitration.status.code = code_pb2.ALREADY_EXISTS
+                    yield rep
+        self.servicer.StreamChannel.side_effect = StreamChannelMock
 
         with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
             client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
