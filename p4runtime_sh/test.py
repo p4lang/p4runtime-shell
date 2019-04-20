@@ -18,9 +18,10 @@ from concurrent import futures
 import google.protobuf.text_format
 from google.rpc import code_pb2
 import grpc
+from io import StringIO
 import logging
 import unittest
-from unittest.mock import ANY, Mock
+from unittest.mock import ANY, Mock, patch
 import subprocess
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
@@ -358,3 +359,34 @@ data {
             p4runtime_pb2.Update.MODIFY, expected_entry)
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+
+class P4RuntimeClientTestCase(BaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.device_id = 0
+        self.election_id = (0, 1)
+
+        self.servicer = P4RuntimeServicer()
+        self.servicer.Write = Mock(return_value=p4runtime_pb2.WriteResponse())
+        self.servicer.Read = Mock(return_value=p4runtime_pb2.ReadResponse())
+        self.servicer.StreamChannel = Mock()
+        p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
+
+    def test_arbitration_slave(self):
+        msg = p4runtime_pb2.StreamMessageResponse()
+        msg.arbitration.device_id = self.device_id
+        msg.arbitration.election_id.high = self.election_id[0]
+        msg.arbitration.election_id.low = self.election_id[1]
+        msg.arbitration.status.code = code_pb2.ALREADY_EXISTS
+
+        def stream_channel_generator():
+            yield msg
+
+        self.servicer.StreamChannel.return_value = stream_channel_generator()
+
+        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
+            self.assertIn("You are not master", mock_stdout.getvalue())
+            self.servicer.StreamChannel.assert_called_once_with(ANY, ANY)
+            client.tear_down()
