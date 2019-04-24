@@ -15,6 +15,7 @@
 
 import argparse
 from collections import Counter, namedtuple, OrderedDict
+import enum
 import logging
 from IPython import start_ipython
 from traitlets.config.loader import Config
@@ -26,7 +27,7 @@ from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
 from .context import P4RuntimeEntity, P4Type, Context
-from .utils import UserError
+from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
 from google.protobuf import descriptor
 
@@ -112,11 +113,10 @@ def _gen_pretty_print_proto_field(substitutions, pcontext):
             self.out.write('\"')
         else:
             self.PrintFieldValue(field, value)
+        subs = None
         if field.containing_type is not None:
-            subs = substitutions.get(field.containing_type.name, [])
-        else:
-            subs = []
-        if field.name in subs and value != 0:
+            subs = substitutions.get(field.containing_type.name, None)
+        if subs and field.name in subs and value != 0:
             name = subs[field.name](field, value, pcontext)
             self.out.write(' ("{}")'.format(name))
         self.out.write(' ' if self.as_one_line else '\n')
@@ -164,8 +164,8 @@ def _repr_pretty_p4info(msg):
                   "implementation_id": _sub_object,
                   "direct_resource_ids": _sub_object},
         "ActionRef": {"id": _sub_object},
-        "ActionProfile": {"table_ids", _sub_object},
-        "DirectCounter": {"direct_table_id", _sub_object},
+        "ActionProfile": {"table_ids": _sub_object},
+        "DirectCounter": {"direct_table_id": _sub_object},
         "DirectMeter": {"direct_table_id": _sub_object},
     }
     return _repr_pretty_proto(msg, substitutions)
@@ -177,6 +177,8 @@ def _repr_pretty_p4runtime(msg):
         "FieldMatch": {"field_id": _sub_mf},
         "Action": {"action_id": _sub_object},
         "Param": {"param_id": _sub_ap},
+        "ActionProfileMember": {"action_profile_id": _sub_object},
+        "ActionProfileGroup": {"action_profile_id": _sub_object},
         "MeterEntry": {"meter_id": _sub_object},
         "CounterEntry": {"counter_id": _sub_object},
         "ValueSetEntry": {"value_set_id": _sub_object},
@@ -228,10 +230,18 @@ If you need the underlying Protobuf message, you can access it with msg().
         print(_repr_pretty_p4info(self._obj))
 
     def actions(self):
-        if self._obj_type != P4Type.table:
-            raise UserError("'actions' is only available for tables")
-        for action in self._obj.action_refs:
-            print(context.get_name_from_id(action.id))
+        """Print list of actions, only for tables and action profiles."""
+        if self._obj_type == P4Type.table:
+            for action in self._obj.action_refs:
+                print(context.get_name_from_id(action.id))
+        elif self._obj_type == P4Type.action_profile:
+            t_id = self._obj.table_ids[0]
+            t_name = context.get_name_from_id(t_id)
+            t = context.get_table(t_name)
+            for action in t.action_refs:
+                print(context.get_name_from_id(action.id))
+        else:
+            raise UserError("'actions' is only available for tables and action profiles")
 
 
 class P4Objects:
@@ -307,7 +317,7 @@ You may also use <self>.set(<f>='<value>')
         return self._fields.keys()
 
     def __dir__(self):
-        return ["reset"]
+        return ["clear"]
 
     def _get_mf(self, name):
         if name in self._fields:
@@ -478,8 +488,7 @@ You may also use <self>.set(<f>='<value>')
         self._fields_suffixes = suffixes
 
     def __str__(self):
-        for name, mf in self._mk.items():
-            print(str(mf))
+        return '\n'.join([str(mf) for name, mf in self._mk.items()])
 
     def _repr_pretty_(self, p, cycle):
         for name, mf in self._mk.items():
@@ -489,7 +498,7 @@ You may also use <self>.set(<f>='<value>')
         for name, value in kwargs.items():
             self[name] = value
 
-    def reset(self):
+    def clear(self):
         self._mk.clear()
 
     def _count(self):
@@ -547,8 +556,7 @@ class Action:
         return p
 
     def __str__(self):
-        for name, p in self._param_values.items():
-            print(str(p))
+        return '\n'.join([str(p) for name, p in self._param_values.items()])
 
     def _repr_pretty_(self, p, cycle):
         for name, p in self._param_values.items():
@@ -559,23 +567,381 @@ class Action:
             self[name] = value
 
 
-class TableEntry:
-    def __init__(self, table_name=None):
+class _EntityBase:
+    def __init__(self, p4_type, entity_type, p4runtime_cls, name=None, modify_only=False):
         self._init = False
-        if table_name is None:
-            raise UserError("Please provide name for table")
-        self.table_name = table_name
-        table_info = P4Objects(P4Type.table)[table_name]
-        self._table_id = table_info.preamble.id
-        self.match = MatchKey(table_name, table_info.match_fields)
+        self._p4_type = p4_type
+        self._entity_type = entity_type
+        if name is None:
+            raise UserError("Please provide name for {}".format(p4_type.pretty_name))
+        self.name = name
+        self._info = P4Objects(p4_type)[name]
+        self.id = self._info.id
+        self._entry = p4runtime_cls()
+        self._modify_only = modify_only
+
+    def __dir__(self):
+        d = ["name", "id", "msg", "info", "read"]
+        if self._modify_only:
+            d.append("modify")
+        else:
+            d.extend(["insert", "modify", "delete"])
+        return d
+
+    # to be called before issueing a P4Runtime request
+    # enforces checks that cannot be performed when setting individual fields
+    def _validate_msg(self):
+        return True
+
+    def _update_msg(self):
+        pass
+
+    def __str__(self):
+        self._update_msg()
+        return str(_repr_pretty_p4runtime(self._entry))
+
+    def _repr_pretty_(self, p, cycle):
+        self._update_msg()
+        p.text(_repr_pretty_p4runtime(self._entry))
+
+    def msg(self):
+        self._update_msg()
+        return self._entry
+
+    def _write(self, type_):
+        self._update_msg()
+        self._validate_msg()
+        update = p4runtime_pb2.Update()
+        update.type = type_
+        getattr(update.entity, self._entity_type.name).CopyFrom(self._entry)
+        client.write_update(update)
+
+    def info(self):
+        """Display P4Info entry for the object"""
+        return self._info
+
+    def insert(self):
+        if self._modify_only:
+            raise NotImplementedError("Insert not supported for {}".format(self._entity_type.name))
+        logging.debug("Inserting entry")
+        self._write(p4runtime_pb2.Update.INSERT)
+
+    def delete(self):
+        if self._modify_only:
+            raise NotImplementedError("Delete not supported for {}".format(self._entity_type.name))
+        logging.debug("Deleting entry")
+        self._write(p4runtime_pb2.Update.DELETE)
+
+    def modify(self):
+        logging.debug("Modifying entry")
+        self._write(p4runtime_pb2.Update.MODIFY)
+
+    def _from_msg(self, msg):
+        raise NotImplementedError
+
+    def read(self, function=None):
+        # Entities should override this method and provide a helpful docstring
+        self._update_msg()
+        self._validate_msg()
+        entity = p4runtime_pb2.Entity()
+        getattr(entity, self._entity_type.name).CopyFrom(self._entry)
+        iterator = client.read_one(entity)
+
+        def gen(it):
+            for rep in iterator:
+                for entity in rep.entities:
+                    e = type(self)(self.name)  # create new instance of same entity
+                    msg = getattr(entity, self._entity_type.name)
+                    e._from_msg(msg)
+                    # neither of these should be needed
+                    # e._update_msg()
+                    # e._entry.CopyFrom(msg)
+                    yield e
+
+        if function is None:
+            return gen(iterator)
+        else:
+            for x in gen(iterator):
+                function(x)
+
+
+class ActionProfileMember(_EntityBase):
+    def __init__(self, action_profile_name=None):
+        super().__init__(
+            P4Type.action_profile, P4RuntimeEntity.action_profile_member,
+            p4runtime_pb2.ActionProfileMember, action_profile_name)
+        self.member_id = 0
         self.action = None
-        self.member_id = None  # TODO(antonin)
-        self.group_id = None  # TODO(antonin)
-        self.oneshot = None  # TODO(antonin)
+        self._valid_action_ids = self._get_action_set()
+        self.__doc__ = """
+An action profile member for '{}'
+
+Use <self>.info to display the P4Info entry for the action profile.
+
+Set the member id with <self>.member_id = <expr>.
+
+To set the action specification <self>.action = <instance of type Action>.
+To set the value of action parameters, use <self>.action['<param name>'] = <expr>.
+Type <self>.action? for more details.
+
+
+Typical usage to insert an action profile member:
+m = action_profile_member['<action_profile_name>'](action='<action_name>', member_id=1)
+m.action['<p1>'] = ...
+...
+m.action['<pM>'] = ...
+# OR m.action.set(p1=..., ..., pM=...)
+m.insert
+
+For information about how to read table entries, use <self>.read?
+"""
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + ["member_id", "action"]
+
+    def _get_action_set(self):
+        t_id = self._info.table_ids[0]
+        t_name = context.get_name_from_id(t_id)
+        t = context.get_table(t_name)
+        return set([action.id for action in t.action_refs])
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            if name == "action" and type(value) is str:
+                value = Action(value)
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "name":
+            raise UserError("Cannot change action profile name")
+        if name == "member_id":
+            if type(value) is not int:
+                raise UserError("member_id must be an integer")
+        if name == "action" and value is not None:
+            if not isinstance(value, Action):
+                raise UserError("action must be an instance of Action")
+            if not self._is_valid_action_id(value._action_id):
+                raise UserError("action '{}' is not a valid action for this action profile".format(
+                    value.action_name))
+        super().__setattr__(name, value)
+
+    def _is_valid_action_id(self, action_id):
+        return action_id in self._valid_action_ids
+
+    def _update_msg(self):
+        self._entry.action_profile_id = self.id
+        self._entry.member_id = self.member_id
+        if self.action is not None:
+            action = self._entry.action
+            action.action_id = self.action._action_id
+            action.params.extend(self.action._param_values.values())
+
+    def _from_msg(self, msg):
+        self.member_id = msg.member_id
+        if msg.HasField('action'):
+            action = msg.action
+            action_name = context.get_name_from_id(action.action_id)
+            self.action = Action(action_name)
+            for p in action.params:
+                p_name = context.get_param_name(action_name, p.param_id)
+                self.action._param_values[p_name] = p
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the appropriate fields unset).
+
+        If function is None, returns an iterator. Iterate over it to get all the
+        members (as ActionProfileMember instances) returned by the
+        server. Otherwise, function is applied to all the members returned
+        by the server.
+        """
+        return super().read(function)
+
+
+class GroupMember:
+    """
+    A member in an ActionProfileGroup.
+    Construct with GroupMember(<member_id>, weight=<weight>, watch=<watch>).
+    You can set / get attributes member_id (required), weight (default 1), watch (default 0).
+    """
+    def __init__(self, member_id=None, weight=1, watch=0):
+        if member_id is None:
+            raise UserError("member_id is required")
+        self._msg = p4runtime_pb2.ActionProfileGroup.Member()
+        self._msg.member_id = member_id
+        self._msg.weight = weight
+        self._msg.watch = watch
+
+    def __dir__(self):
+        return ["member_id", "weight", "watch"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name == "member_id":
+            if type(value) is not int:
+                raise UserError("member_id must be an integer")
+            self._msg.member_id = value
+            return
+        if name == "weight":
+            if type(value) is not int:
+                raise UserError("weight must be an integer")
+            self._msg.weight = value
+            return
+        if name == "watch":
+            if type(value) is not int:
+                raise UserError("watch must be an integer")
+            self._msg.watch = value
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "member_id":
+            return self._msg.member_id
+        if name == "weight":
+            return self._msg.weight
+        if name == "watch":
+            return self._msg.watch
+        return super().__getattr__(name)
+
+    def __str__(self):
+        return str(self._msg)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(p))
+
+
+class ActionProfileGroup(_EntityBase):
+    def __init__(self, action_profile_name=None):
+        super().__init__(
+            P4Type.action_profile, P4RuntimeEntity.action_profile_group,
+            p4runtime_pb2.ActionProfileGroup, action_profile_name)
+        self.group_id = 0
+        self.max_size = 0
+        self.members = []
+        self.__doc__ = """
+An action profile group for '{}'
+
+Use <self>.info to display the P4Info entry for the action profile.
+
+Set the group id with <self>.group_id = <expr>. Default is 0.
+Set the max size with <self>.max_size = <expr>. Default is 0.
+
+Add members to the group with <self>.add(<member_id>, weight=<weight>, watch=<watch>).
+weight and watch are optional (default to 1 and 0 respectively).
+
+Typical usage to insert an action profile group:
+g = action_profile_group['<action_profile_name>'](group_id=1)
+g.add(<member id 1>)
+g.add(<member id 2>)
+
+For information about how to read table entries, use <self>.read?
+"""
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + ["group_id", "max_size", "members", "add", "clear"]
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "name":
+            raise UserError("Cannot change action profile name")
+        elif name == "group_id":
+            if type(value) is not int:
+                raise UserError("group_id must be an integer")
+        elif name == "members":
+            if type(value) is not list:
+                raise UserError("members must be a list of GroupMember objects")
+            for m in value:
+                if type(m) is not GroupMember:
+                    raise UserError("members must be a list of GroupMember objects")
+        super().__setattr__(name, value)
+
+    def add(self, member_id=None, weight=1, watch=0):
+        """Add a member to the members list."""
+        self.members.append(GroupMember(member_id, weight, watch))
+
+    def clear(self):
+        """Empty members list."""
+        self.members = []
+
+    def _update_msg(self):
+        self._entry.action_profile_id = self.id
+        self._entry.group_id = self.group_id
+        self._entry.max_size = self.max_size
+        del self._entry.members[:]
+        for member in self.members:
+            if type(member) is not GroupMember:
+                raise UserError("members must be a list of GroupMember objects")
+            m = self._entry.members.add()
+            m.CopyFrom(member._msg)
+
+    def _from_msg(self, msg):
+        self.group_id = msg.group_id
+        self.max_size = msg.max_size
+        self.members = []
+        for member in msg.members:
+            self.add(member.member_id, member.weight, member.watch)
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the appropriate fields unset).
+
+        If function is None, returns an iterator. Iterate over it to get all the
+        members (as ActionProfileGroup instances) returned by the
+        server. Otherwise, function is applied to all the groups returned by the
+        server.
+        """
+        return super().read(function)
+
+
+class TableEntry(_EntityBase):
+    @enum.unique
+    class _ActionSpecType(enum.Enum):
+        NONE = 0
+        DIRECT_ACTION = 1
+        MEMBER_ID = 2
+        GROUP_ID = 3
+        ONESHOT = 4
+
+    @classmethod
+    def _action_spec_name_to_type(cls, name):
+        return {
+            "action": cls._ActionSpecType.DIRECT_ACTION,
+            "member_id": cls._ActionSpecType.MEMBER_ID,
+            "group_id": cls._ActionSpecType.GROUP_ID,
+            "oneshot": cls._ActionSpecType.ONESHOT,
+        }.get(name, None)
+
+    def __init__(self, table_name=None):
+        super().__init__(
+            P4Type.table, P4RuntimeEntity.table_entry,
+            p4runtime_pb2.TableEntry, table_name)
+        self.match = MatchKey(table_name, self._info.match_fields)
+        self._action_spec_type = self._ActionSpecType.NONE
+        self._action_spec = None
         self.priority = 0
         self.is_default = False
-        self._entry = p4runtime_pb2.TableEntry()
-        self._table_info = table_info
+        ap = self._get_action_profile()
+        if ap is None:
+            self._support_members = False
+            self._support_groups = False
+        else:
+            self._support_members = True
+            self._support_groups = ap.with_selector
         self.__doc__ = """
 An entry for table '{}'
 
@@ -583,15 +949,29 @@ Use <self>.info to display the P4Info entry for this table.
 
 To set the match key, use <self>.match['<field name>'] = <expr>.
 Type <self>.match? for more details.
-
-To set the action specification <self>.action = <instance of type Action>.
+""".format(table_name)
+        if ap is None:
+            self.__doc__ += """
+To set the action specification (this is a direct table):
+<self>.action = <instance of type Action>.
 To set the value of action parameters, use <self>.action['<param name>'] = <expr>.
 Type <self>.action? for more details.
-
+"""
+        if self._support_members:
+            self.__doc__ += """
+Access the member_id with <self>.member_id.
+"""
+        if self._support_groups:
+            self.__doc__ += """
+Or access the group_id with <self>.group_id.
+"""
+        self.__doc__ += """
 To set the priority, use <self>.priority = <expr>.
 
 To mark the entry as default, use <self>.is_default = True.
-
+"""
+        if ap is None:
+            self.__doc__ += """
 Typical usage to insert a table entry:
 t = table_entry['<table_name>'](action='<action_name>')
 t.match['<f1>'] = ...
@@ -611,10 +991,47 @@ t.action['<p1>'] = ...
 t.action['<pM>'] = ...
 # OR t.action.set(p1=..., ..., pM=...)
 t.modify
-
+"""
+        else:
+            self.__doc__ += """
+Typical usage to insert a table entry:
+t = table_entry['<table_name>']
+t.match['<f1>'] = ...
+...
+t.match['<fN>'] = ...
+# OR t.match.set(f1=..., ..., fN=...)
+t.member_id = <expr>
+"""
+        self.__doc__ += """
 For information about how to read table entries, use <self>.read?
-""".format(table_name)
+"""
+
         self._init = True
+
+    def _get_action_profile(self):
+        implementation_id = self._info.implementation_id
+        if implementation_id == 0:
+            return None
+        try:
+            implementation_name = context.get_name_from_id(implementation_id)
+        except KeyError:
+            raise InvalidP4InfoError(
+                "Invalid implementation_id {} for table '{}'".format(
+                    implementation_id, self.name))
+        ap = context.get_obj(P4Type.action_profile, implementation_name)
+        if ap is None:
+            raise InvalidP4InfoError("Unknown implementation for table '{}'".format(self.name))
+        return ap
+
+    def __dir__(self):
+        d = super().__dir__() + ["match", "priority", "is_default", "clear_action"]
+        if self._support_groups:
+            d.extend(["member_id", "group_id"])
+        elif self._suport_members:
+            d.append("member_id")
+        else:
+            d.append("action")
+        return d
 
     def __call__(self, **kwargs):
         for name, value in kwargs.items():
@@ -623,72 +1040,116 @@ For information about how to read table entries, use <self>.read?
             setattr(self, name, value)
         return self
 
+    def _action_spec_set_member(self, member_id):
+        if type(member_id) is None:
+            if self._action_spec_type == self._ActionSpecType.MEMBER_ID:
+                super().__setattr__("_action_spec_type", self._ActionSpecType.NONE)
+                super().__setattr__("_action_spec", None)
+            return
+        if type(member_id) is not int:
+            raise UserError("member_id must be an integer")
+        if not self._support_members:
+            raise UserError(
+                "Table does not have an action profile and therefore does not support members")
+        super().__setattr__("_action_spec_type", self._ActionSpecType.MEMBER_ID)
+        super().__setattr__("_action_spec", member_id)
+
+    def _action_spec_set_group(self, group_id):
+        if type(group_id) is None:
+            if self._action_spec_type == self._ActionSpecType.GROUP_ID:
+                super().__setattr__("_action_spec_type", self._ActionSpecType.NONE)
+                super().__setattr__("_action_spec", None)
+            return
+        if type(group_id) is not int:
+            raise UserError("group_id must be an integer")
+        if not self._support_groups:
+            raise UserError(
+                "Table does not have an action profile and therefore does not support groups")
+        super().__setattr__("_action_spec_type", self._ActionSpecType.GROUP_ID)
+        super().__setattr__("_action_spec", group_id)
+
+    def _action_spec_set_action(self, action):
+        if type(action) is None:
+            if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
+                super().__setattr__("_action_spec_type", self._ActionSpecType.NONE)
+                super().__setattr__("_action_spec", None)
+            return
+        if not isinstance(action, Action):
+            raise UserError("action must be an instance of Action")
+        if self._info.implementation_id != 0:
+            raise UserError(
+                "Table has an implementation and therefore does not support direct actions "
+                "(P4Runtime 1.0 doesn't support writing the default action for indirect tables")
+        if not self._is_valid_action_id(action._action_id):
+            raise UserError("action '{}' is not a valid action for this table".format(
+                action.action_name))
+        super().__setattr__("_action_spec_type", self._ActionSpecType.DIRECT_ACTION)
+        super().__setattr__("_action_spec", action)
+
     def __setattr__(self, name, value):
         if name[0] == "_" or not self._init:
             super().__setattr__(name, value)
             return
-        if name == "table_name":
+        elif name == "name":
             raise UserError("Cannot change table name")
-        if name == "priority":
+        elif name == "priority":
             if type(value) is not int:
                 raise UserError("priority must be an integer")
-        if name == "match" and not isinstance(value, MatchKey):
+        elif name == "match" and not isinstance(value, MatchKey):
             raise UserError("match must be an instance of MatchKey")
-        if name == "is_default":
+        elif name == "is_default":
             if type(value) is not bool:
                 raise UserError("is_default must be a boolean")
             # TODO(antonin): should we do a better job and handle other cases (a field is set while
             # is_default is set to True)?
             if value is True and self.match._count() > 0:
-                print("Resetting match key because entry is now default")
-                self.match.reset()
-        if name == "member_id":
-            raise NotSupportedYet("Setting 'member_id'")
-        if name == "group_id":
-            raise NotSupportedYet("Setting 'group_id'")
-        if name == "oneshot":
+                print("Clearing match key because entry is now default")
+                self.match.clear()
+        elif name == "member_id":
+            self._action_spec_set_member(value)
+            return
+        elif name == "group_id":
+            self._action_spec_set_group(value)
+            return
+        elif name == "oneshot":
             raise NotSupportedYet("Setting 'oneshot'")
-        if name == "action" and value is not None:
-            if not isinstance(value, Action):
-                raise UserError("action must be an instance of Action")
-            if not self._is_valid_action_id(value._action_id):
-                raise UserError("action '{}' is not a valid action for this table".format(
-                    value.action_name))
+        elif name == "action" and value is not None:
+            self._action_spec_set_action(value)
+            return
         super().__setattr__(name, value)
 
+    def __getattr__(self, name):
+        t = self._action_spec_name_to_type(name)
+        if t is not None:
+            if self._action_spec_type == t:
+                return self._action_spec
+            else:
+                return None
+        super().__getattr__(name)
+
     def _is_valid_action_id(self, action_id):
-        for action_ref in self._table_info.action_refs:
+        for action_ref in self._info.action_refs:
             if action_id == action_ref.id:
                 return True
         return False
 
-    # Not really needed
-    # def set_match(self, **kwargs):
-    #     self.match.set(**kwargs)
-
-    def _write(self, type_):
-        self._update_msg()
-        self._validate_msg()
-        update = p4runtime_pb2.Update()
-        update.type = type_
-        update.entity.table_entry.CopyFrom(self._entry)
-        client.write_update(update)
-
-    def info(self):
-        """Display P4Info entry for the table"""
-        return self._table_info
-
-    def insert(self):
-        logging.debug("Inserting entry")
-        self._write(p4runtime_pb2.Update.INSERT)
-
-    def delete(self):
-        logging.debug("Deleting entry")
-        self._write(p4runtime_pb2.Update.DELETE)
-
-    def modify(self):
-        logging.debug("Modifying entry")
-        self._write(p4runtime_pb2.Update.MODIFY)
+    def _from_msg(self, msg):
+        self.priority = msg.priority
+        self.is_default = msg.is_default_action
+        for mf in msg.match:
+            mf_name = context.get_mf_name(self.name, mf.field_id)
+            self.match._mk[mf_name] = mf
+        if msg.action.HasField('action'):
+            action = msg.action.action
+            action_name = context.get_name_from_id(action.action_id)
+            self.action = Action(action_name)
+            for p in action.params:
+                p_name = context.get_param_name(action_name, p.param_id)
+                self.action._param_values[p_name] = p
+        elif msg.action.HasField('action_profile_member_id'):
+            self.member_id = msg.action.action_profile_member_id
+        elif msg.action.HasField('action_profile_group_id'):
+            self.group_id = msg.action.action_profile_group_id
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -706,80 +1167,46 @@ For information about how to read table entries, use <self>.read?
         To delete all the entries from a table, simply use:
         table_entry['<table_name>'].read(function=lambda x: x.delete())
         """
-        self._update_msg()
-        self._validate_msg()
-        entity = p4runtime_pb2.Entity()
-        entity.table_entry.CopyFrom(self._entry)
-        iterator = client.read_one(entity)
-
-        def gen(it):
-            for rep in iterator:
-                for entity in rep.entities:
-                    te = TableEntry(self.table_name)
-                    self.priority = entity.table_entry.priority
-                    self.is_default = entity.table_entry.is_default_action
-                    for mf in entity.table_entry.match:
-                        mf_name = context.get_mf_name(self.table_name, mf.field_id)
-                        te.match._mk[mf_name] = mf
-                    if entity.table_entry.action.HasField('action'):
-                        action = entity.table_entry.action.action
-                        action_name = context.get_name_from_id(action.action_id)
-                        te.action = Action(action_name)
-                        for p in action.params:
-                            p_name = context.get_param_name(action_name, p.param_id)
-                            te.action._param_values[p_name] = p
-                    self._entry.CopyFrom(entity.table_entry)
-                    yield te
-
-        if function is None:
-            return gen(iterator)
-        else:
-            for x in gen(iterator):
-                function(x)
+        return super().read(function)
 
     def _update_msg(self):
         entry = p4runtime_pb2.TableEntry()
-        entry.table_id = self._table_id
+        entry.table_id = self.id
         entry.match.extend(self.match._mk.values())
         entry.priority = self.priority
         entry.is_default_action = self.is_default
-        if self.action is not None:
-            entry.action.action.action_id = self.action._action_id
-            entry.action.action.params.extend(self.action._param_values.values())
+        if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
+            entry.action.action.action_id = self._action_spec._action_id
+            entry.action.action.params.extend(self._action_spec._param_values.values())
+        elif self._action_spec_type == self._ActionSpecType.MEMBER_ID:
+            entry.action.action_profile_member_id = self._action_spec
+        elif self._action_spec_type == self._ActionSpecType.GROUP_ID:
+            entry.action.action_profile_group_id = self._action_spec
         self._entry = entry
 
-    # to be called before issueing a P4Runtime request
-    # enforces checks that cannot be performed when setting individual fields
     def _validate_msg(self):
         if self.is_default and self.match._count() > 0:
             raise UserError(
                 "Match key must be empty for default entry, use <self>.is_default = False "
-                "or <self>.match.reset (whichever one is appropriate)")
+                "or <self>.match.clear (whichever one is appropriate)")
 
-    def __str__(self):
-        self._update_msg()
-        return str(_repr_pretty_p4runtime(self._entry))
+    def clear_action(self):
+        """Clears the action spec for the TableEntry."""
+        super().__setattr__("_action_spec_type", self._ActionSpecType.NONE)
+        super().__setattr__("_action_spec", None)
 
-    def _repr_pretty_(self, p, cycle):
-        self._update_msg()
-        p.text(_repr_pretty_p4runtime(self._entry))
-
-    def msg(self):
-        self._update_msg()
-        return self._entry
+    def clear_match(self):
+        """Clears the match spec for the TableEntry."""
+        self.match.clear()
 
 
-class CounterEntry:
+class CounterEntry(_EntityBase):
     def __init__(self, counter_name=None):
-        self._init = False
-        if counter_name is None:
-            raise UserError("Please provide name for counter")
-        self.counter_name = counter_name
-        counter_info = P4Objects(P4Type.counter)[counter_name]
-        self._counter_id = counter_info.preamble.id
-        self._entry = p4runtime_pb2.CounterEntry()
-        self._entry.counter_id = self._counter_id
-        self._counter_info = counter_info
+        super().__init__(
+            P4Type.counter, P4RuntimeEntity.counter_entry,
+            p4runtime_pb2.CounterEntry, counter_name,
+            modify_only=True)
+        self._entry.counter_id = self.id
         self.__doc__ = """
 An entry for counter '{}'
 
@@ -796,8 +1223,7 @@ To write to the counter, use <self>.modify
         self._init = True
 
     def __dir__(self):
-        return ["counter_name", "index", "byte_count", "packet_count",
-                "info", "modify", "read", "msg"]
+        return super().__dir__() + ["index", "byte_count", "packet_count"]
 
     def __call__(self, **kwargs):
         for name, value in kwargs.items():
@@ -808,7 +1234,7 @@ To write to the counter, use <self>.modify
         if name[0] == "_" or not self._init:
             super().__setattr__(name, value)
             return
-        if name == "counter_name":
+        if name == "name":
             raise UserError("Cannot change counter name")
         if name == "index":
             if value is None:
@@ -832,19 +1258,8 @@ To write to the counter, use <self>.modify
             return getattr(self._entry.data, name)
         super().__getattr__(name)
 
-    def _write(self, type_):
-        update = p4runtime_pb2.Update()
-        update.type = type_
-        update.entity.counter_entry.CopyFrom(self._entry)
-        client.write_update(update)
-
-    def info(self):
-        """Display P4Info entry for the counter"""
-        return self._counter_info
-
-    def modify(self):
-        logging.debug("Modifying entry")
-        self._write(p4runtime_pb2.Update.MODIFY)
+    def _from_msg(self, msg):
+        self._entry.CopyFrom(msg)
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -860,31 +1275,7 @@ To write to the counter, use <self>.modify
         The above code is equivalent to the following one-liner:
         <self>.read(lambda c: print(c))
         """
-        entity = p4runtime_pb2.Entity()
-        entity.counter_entry.CopyFrom(self._entry)
-        iterator = client.read_one(entity)
-
-        def gen(it):
-            for rep in iterator:
-                for entity in rep.entities:
-                    c = CounterEntry(self.counter_name)
-                    c._entry.CopyFrom(entity.counter_entry)
-                    yield c
-
-        if function is None:
-            return gen(iterator)
-        else:
-            for x in gen(iterator):
-                function(x)
-
-    def __str__(self):
-        return str(_repr_pretty_p4runtime(self._entry))
-
-    def _repr_pretty_(self, p, cycle):
-        p.text(_repr_pretty_p4runtime(self._entry))
-
-    def msg(self):
-        return self._entry
+        return super().read(function)
 
 
 class P4RuntimeEntityBuilder:
@@ -1035,6 +1426,9 @@ def main():
         "MatchKey": MatchKey,
         "Action": Action,
         "CounterEntry": CounterEntry,
+        "ActionProfileMember": ActionProfileMember,
+        "GroupMember": GroupMember,
+        "ActionProfileGroup": ActionProfileGroup,
         "p4info": context.p4info,
         "Write": Write,
     }
@@ -1045,6 +1439,8 @@ def main():
     supported_entities = [
         (P4RuntimeEntity.table_entry, P4Type.table, TableEntry),
         (P4RuntimeEntity.counter_entry, P4Type.counter, CounterEntry),
+        (P4RuntimeEntity.action_profile_member, P4Type.action_profile, ActionProfileMember),
+        (P4RuntimeEntity.action_profile_group, P4Type.action_profile, ActionProfileGroup),
     ]
     for entity, p4type, cls in supported_entities:
         user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)

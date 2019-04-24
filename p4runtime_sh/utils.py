@@ -15,3 +15,14 @@ class UserError(Exception):
     # TODO(antonin): is this the best way to get a custom traceback?
     def _render_traceback_(self):
         return [str(self)]
+
+
+class InvalidP4InfoError(Exception):
+    def __init__(self, info=""):
+        self.info = info
+
+    def __str__(self):
+        return "Invalid P4Info message: {}".format(self.info)
+
+    def _render_traceback_(self):
+        return [str(self)]
