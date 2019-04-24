@@ -26,7 +26,7 @@ import subprocess
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 import p4runtime_sh.shell as sh
-from p4runtime_sh.context import P4Type
+from p4runtime_sh.context import P4Type, P4RuntimeEntity
 from p4runtime_sh.utils import UserError
 import nose2.tools
 
@@ -134,21 +134,15 @@ class UnitTestCase(BaseTestCase):
         sh.client = None
         super().tearDown()
 
-    def _make_write_request(self, type_, expected_txt, entity):
+    def make_write_request(self, update_type, entity_type, expected_txt):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
         req.election_id.high = self.election_id[0]
         req.election_id.low = self.election_id[1]
         update = req.updates.add()
-        update.type = type_
-        google.protobuf.text_format.Merge(expected_txt, getattr(update.entity, entity))
+        update.type = update_type
+        google.protobuf.text_format.Merge(expected_txt, getattr(update.entity, entity_type.name))
         return req
-
-    def make_write_request_from_table_entry(self, type_, expected_txt):
-        return self._make_write_request(type_, expected_txt, 'table_entry')
-
-    def make_write_request_from_counter_entry(self, type_, expected_txt):
-        return self._make_write_request(type_, expected_txt, 'counter_entry')
 
     def test_table_entry_exact(self):
         te = sh.TableEntry("ExactOne")(action="actionA")
@@ -175,8 +169,8 @@ action {
 }
 """
 
-        expected_req = self.make_write_request_from_table_entry(
-            p4runtime_pb2.Update.INSERT, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
@@ -211,8 +205,8 @@ action {
 }
 """ % (value, length)
 
-        expected_req = self.make_write_request_from_table_entry(
-            p4runtime_pb2.Update.INSERT, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
@@ -249,8 +243,8 @@ action {
 }
 """ % (value, mask)
 
-        expected_req = self.make_write_request_from_table_entry(
-            p4runtime_pb2.Update.INSERT, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
@@ -285,8 +279,8 @@ action {
 }
 """
 
-        expected_req = self.make_write_request_from_table_entry(
-            p4runtime_pb2.Update.INSERT, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
@@ -299,6 +293,112 @@ action {
         te = sh.TableEntry("RangeOne")
         with self.assertRaisesRegex(UserError, "Invalid range match"):
             te.match["header_test.field32"] = "77..22"
+
+    def test_table_direct_with_member_id(self):
+        te = sh.TableEntry("ExactOne")
+        te.match["header_test.field32"] = "10.0.0.0"
+        with self.assertRaisesRegex(UserError, "does not support members"):
+            te.member_id = 1
+
+        with self.assertRaisesRegex(UserError, "does not support members"):
+            te = sh.TableEntry("ExactOne")(member_id=1)
+
+    def test_table_direct_with_group_id(self):
+        te = sh.TableEntry("ExactOne")
+        te.match["header_test.field32"] = "10.0.0.0"
+        with self.assertRaisesRegex(UserError, "does not support groups"):
+            te.group_id = 1
+
+        with self.assertRaisesRegex(UserError, "does not support groups"):
+            te = sh.TableEntry("ExactOne")(group_id=1)
+
+    def test_table_indirect(self):
+        member = sh.ActionProfileMember("ActProfWS")(member_id=1, action="actionA")
+        member.action["param"] = "aa:bb:cc:dd:ee:ff"
+        group = sh.ActionProfileGroup("ActProfWS")(group_id=1)
+        group.add(member.member_id)
+
+        expected_member = """
+action_profile_id: 285237193
+member_id: 1
+action {
+  action_id: 16783703
+  params {
+    param_id: 1
+    value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+  }
+}
+"""
+
+        expected_group = """
+action_profile_id: 285237193
+group_id: 1
+members {
+  member_id: 1
+  weight: 1
+}
+"""
+
+        expected_entry_1 = """
+table_id: 33586946
+match {
+  field_id: 1
+  exact {
+    value: "\\x0a\\x00\\x00\\x00"
+  }
+}
+action {
+  action_profile_member_id: 1
+}
+"""
+
+        expected_entry_2 = """
+table_id: 33586946
+match {
+  field_id: 1
+  exact {
+    value: "\\x0a\\x00\\x00\\x00"
+  }
+}
+action {
+  action_profile_group_id: 1
+}
+"""
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.action_profile_member, expected_member)
+        member.insert()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.action_profile_group, expected_group)
+        group.insert()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        te = sh.TableEntry("IndirectWS")
+        te.match["header_test.field32"] = "10.0.0.0"
+        te.member_id = member.member_id
+        te.insert()
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry_1)
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        te.group_id = group.group_id
+        te.modify()
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.table_entry, expected_entry_2)
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+    def test_table_indirect_with_direct_action(self):
+        te = sh.TableEntry("IndirectWS")
+        te.match["header_test.field32"] = "10.0.0.0"
+        with self.assertRaisesRegex(UserError, "does not support direct actions"):
+            te.action = sh.Action("actionA")
+
+        with self.assertRaisesRegex(UserError, "does not support direct actions"):
+            te = sh.TableEntry("IndirectWS")(action="actionA")
 
     def test_table_info(self):
         t = sh.P4Objects(P4Type.table)["ExactOne"]
@@ -344,8 +444,8 @@ data {
   packet_count: 100
 }
 """
-        expected_req = self.make_write_request_from_counter_entry(
-            p4runtime_pb2.Update.MODIFY, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.counter_entry, expected_entry)
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
@@ -356,8 +456,8 @@ data {
   packet_count: 100
 }
 """
-        expected_req = self.make_write_request_from_counter_entry(
-            p4runtime_pb2.Update.MODIFY, expected_entry)
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.counter_entry, expected_entry)
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
