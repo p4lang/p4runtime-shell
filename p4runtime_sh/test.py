@@ -120,8 +120,8 @@ class UnitTestCase(BaseTestCase):
         self.election_id = (0, 1)
 
         self.servicer = P4RuntimeServicer()
-        self.servicer.Write = Mock(return_value=p4runtime_pb2.WriteResponse())
-        self.servicer.Read = Mock(return_value=p4runtime_pb2.ReadResponse())
+        self.servicer.Write = Mock(spec=[], return_value=p4runtime_pb2.WriteResponse())
+        self.servicer.Read = Mock(spec=[], return_value=p4runtime_pb2.ReadResponse())
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
         sh.client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
@@ -143,6 +143,13 @@ class UnitTestCase(BaseTestCase):
         update.type = update_type
         google.protobuf.text_format.Merge(expected_txt, getattr(update.entity, entity_type.name))
         return req
+
+    def make_read_mock(self, entity):
+        def _Read(request, context):
+            rep = p4runtime_pb2.ReadResponse()
+            rep.entities.add().CopyFrom(entity)
+            yield rep
+        return _Read
 
     def test_table_entry_exact(self):
         te = sh.TableEntry("ExactOne")(action="actionA")
@@ -400,6 +407,61 @@ action {
         with self.assertRaisesRegex(UserError, "does not support direct actions"):
             te = sh.TableEntry("IndirectWS")(action="actionA")
 
+    def test_table_indirect_oneshot(self):
+        te = sh.TableEntry("IndirectWS")
+        te.match["header_test.field32"] = "10.0.0.0"
+        a1 = sh.Action("actionA")
+        a1["param"] = "aa:bb:cc:dd:ee:ff"
+        a2 = sh.Action("actionB")
+        a2["param"] = "10"
+        te.oneshot.add(a1).add(a2, weight=2)
+
+        expected_entry = """
+table_id: 33586946
+match {
+  field_id: 1
+  exact {
+    value: "\\x0a\\x00\\x00\\x00"
+  }
+}
+action {
+  action_profile_action_set {
+    action_profile_actions {
+      action {
+        action_id: 16783703
+        params {
+          param_id: 1
+          value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+        }
+      }
+      weight: 1
+    }
+    action_profile_actions {
+      action {
+        action_id: 16809468
+        params {
+          param_id: 1
+          value: "\\x0a"
+        }
+      }
+      weight: 2
+    }
+  }
+}
+"""
+
+        te.insert()
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+        entity = expected_req.updates[0].entity
+        self.servicer.Read.side_effect = self.make_read_mock(entity)
+        te_read = next(te.read())
+        self.servicer.Read.assert_called_once_with(ANY, ANY)
+        self.assertEqual(str(te_read.msg()), str(entity.table_entry))
+
     def test_table_info(self):
         t = sh.P4Objects(P4Type.table)["ExactOne"]
         expected = """
@@ -469,12 +531,12 @@ class P4RuntimeClientTestCase(BaseTestCase):
         self.election_id = (0, 1)
 
         self.servicer = P4RuntimeServicer()
-        self.servicer.Write = Mock(return_value=p4runtime_pb2.WriteResponse())
-        self.servicer.Read = Mock(return_value=p4runtime_pb2.ReadResponse())
+        self.servicer.Write = Mock(spec=[], return_value=p4runtime_pb2.WriteResponse())
+        self.servicer.Read = Mock(spec=[], return_value=p4runtime_pb2.ReadResponse())
         # Starting with gRPC 1.20.0, the server code checks for the presence of an
         # experimental_non_blocking
         # (https://github.com/grpc/grpc/blob/v1.20.0/src/python/grpcio/grpc/_server.py#L532). We
-        # need to make sure it is *not* present.
+        # need to make sure it is *not* present with spec=[].
         self.servicer.StreamChannel = Mock(spec=[])
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 

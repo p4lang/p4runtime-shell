@@ -338,6 +338,8 @@ You may also use <self>.set(<f>='<value>')
         print(self._mk.get(name, "Unset"))
 
     def _parse_mf(self, s, field_info):
+        if type(s) is not str:
+            raise UserError("Match field value must be a string")
         if field_info.match_type == p4info_pb2.MatchField.EXACT:
             return self._parse_mf_exact(s, field_info)
         elif field_info.match_type == p4info_pb2.MatchField.LPM:
@@ -507,6 +509,7 @@ You may also use <self>.set(<f>='<value>')
 
 class Action:
     def __init__(self, action_name=None):
+        self._init = False
         if action_name is None:
             raise UserError("Please provide name for action")
         self.action_name = action_name
@@ -520,6 +523,7 @@ class Action:
         self._action_info = action_info
         self._param_values = OrderedDict()
         self._set_docstring()
+        self._init = True
 
     def _set_docstring(self):
         self.__doc__ = "Action parameters for action '{}':\n\n".format(self.action_name)
@@ -532,12 +536,23 @@ class Action:
     def _ipython_key_completions_(self):
         return self._params.keys()
 
+    def __dir__(self):
+        return ["action_name", "msg", "set"]
+
     def _get_param(self, name):
         if name not in self._params:
             raise UserError(
                 "'{}' is not a valid action parameter name for action '{}'".format(
                     name, self._action_name))
         return self._params[name]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "action_name":
+            raise UserError("Cannot change action name")
+        super().__setattr__(name, value)
 
     def __setitem__(self, name, value):
         param_info = self._get_param(name)
@@ -549,18 +564,32 @@ class Action:
         print(self._param_values.get(name, "Unset"))
 
     def _parse_param(self, s, param_info):
+        if type(s) is not str:
+            raise UserError("Action parameter value must be a string")
         v = bytes_utils.parse_value(s, param_info.bitwidth)
         p = p4runtime_pb2.Action.Param()
         p.param_id = param_info.id
         p.value = v
         return p
 
+    def msg(self):
+        msg = p4runtime_pb2.Action()
+        msg.action_id = self._action_id
+        msg.params.extend(self._param_values.values())
+        return msg
+
+    def _from_msg(self, msg):
+        assert(self._action_id == msg.action_id)
+        self._params.clear()
+        for p in msg.params:
+            p_name = context.get_param_name(self.action_name, p.param_id)
+            self._param_values[p_name] = p
+
     def __str__(self):
-        return '\n'.join([str(p) for name, p in self._param_values.items()])
+        return str(self.msg())
 
     def _repr_pretty_(self, p, cycle):
-        for name, p in self._param_values.items():
-            p.text(str(p))
+        p.text(str(self.msg()))
 
     def set(self, **kwargs):
         for name, value in kwargs.items():
@@ -693,7 +722,7 @@ m.action['<pM>'] = ...
 # OR m.action.set(p1=..., ..., pM=...)
 m.insert
 
-For information about how to read table entries, use <self>.read?
+For information about how to read members, use <self>.read?
 """
         self._init = True
 
@@ -737,9 +766,7 @@ For information about how to read table entries, use <self>.read?
         self._entry.action_profile_id = self.id
         self._entry.member_id = self.member_id
         if self.action is not None:
-            action = self._entry.action
-            action.action_id = self.action._action_id
-            action.params.extend(self.action._param_values.values())
+            self._entry.action.CopyFrom(self.action.msg())
 
     def _from_msg(self, msg):
         self.member_id = msg.member_id
@@ -747,9 +774,7 @@ For information about how to read table entries, use <self>.read?
             action = msg.action
             action_name = context.get_name_from_id(action.action_id)
             self.action = Action(action_name)
-            for p in action.params:
-                p_name = context.get_param_name(action_name, p.param_id)
-                self.action._param_values[p_name] = p
+            self.action._from_msg(action)
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -840,8 +865,9 @@ Typical usage to insert an action profile group:
 g = action_profile_group['<action_profile_name>'](group_id=1)
 g.add(<member id 1>)
 g.add(<member id 2>)
+# OR g.add(<member id 1>).add(<member id 2>)
 
-For information about how to read table entries, use <self>.read?
+For information about how to read groups, use <self>.read?
 """
         self._init = True
 
@@ -873,6 +899,7 @@ For information about how to read table entries, use <self>.read?
     def add(self, member_id=None, weight=1, watch=0):
         """Add a member to the members list."""
         self.members.append(GroupMember(member_id, weight, watch))
+        return self
 
     def clear(self):
         """Empty members list."""
@@ -908,6 +935,141 @@ For information about how to read table entries, use <self>.read?
         return super().read(function)
 
 
+def _get_action_profile(table_name):
+    table = context.get_table(table_name)
+    implementation_id = table.implementation_id
+    if implementation_id == 0:
+        return None
+    try:
+        implementation_name = context.get_name_from_id(implementation_id)
+    except KeyError:
+        raise InvalidP4InfoError(
+            "Invalid implementation_id {} for table '{}'".format(
+                implementation_id, table_name))
+    ap = context.get_obj(P4Type.action_profile, implementation_name)
+    if ap is None:
+        raise InvalidP4InfoError("Unknown implementation for table '{}'".format(table_name))
+    return ap
+
+
+class OneshotAction:
+    """
+    An action in a oneshot action set.
+    Construct with OneshotAction(<action (Action instance)>, weight=<weight>, watch=<watch>).
+    You can set / get attributes action (required), weight (default 1), watch (default 0).
+    """
+    def __init__(self, action=None, weight=1, watch=0):
+        if action is None:
+            raise UserError("action is required")
+        self.action = action
+        self.weight = weight
+        self.watch = watch
+
+    def __dir__(self):
+        return ["action", "weight", "watch", "msg"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name == "action":
+            if not isinstance(value, Action):
+                raise UserError("action must be an instance of Action")
+        elif name == "weight":
+            if type(value) is not int:
+                raise UserError("weight must be an integer")
+        elif name == "watch":
+            if type(value) is not int:
+                raise UserError("watch must be an integer")
+        super().__setattr__(name, value)
+
+    def msg(self):
+        msg = p4runtime_pb2.ActionProfileAction()
+        msg.action.CopyFrom(self.action.msg())
+        msg.weight = self.weight
+        msg.watch = self.watch
+        return msg
+
+    def __str__(self):
+        return str(self.msg())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self.msg()))
+
+
+class Oneshot:
+    def __init__(self, table_name=None):
+        self._init = False
+        if table_name is None:
+            raise UserError("Please provide table name")
+        self.table_name = table_name
+        self.actions = []
+        self._table_info = P4Objects(P4Type.table)[table_name]
+        ap = _get_action_profile(table_name)
+        if not ap:
+            raise UserError("Cannot create Oneshot instance for a direct table")
+        if not ap.with_selector:
+            raise UserError(
+                "Cannot create Oneshot instance for a table with an action profile "
+                "without selector")
+        self.__doc__ = """
+A "oneshot" action set for table '{}'.
+
+To add an action to the set, use <self>.add(<Action instance>).
+You can also access the set of actions with <self>.actions (which is a Python list).
+""".format(self.table_name)
+        self._init = True
+
+    def __dir__(self):
+        return ["table_name", "actions", "add", "msg"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "table_name":
+            raise UserError("Cannot change table name")
+        elif name == "actions":
+            if type(value) is not list:
+                raise UserError("actions must be a list of OneshotAction objects")
+            for m in value:
+                if type(m) is not OneshotAction:
+                    raise UserError("actions must be a list of OneshotAction objects")
+                if not self._is_valid_action_id(value.action._action_id):
+                    raise UserError("action '{}' is not a valid action for table {}".format(
+                        value.action.action_name, self.table_name))
+        super().__setattr__(name, value)
+
+    def _is_valid_action_id(self, action_id):
+        for action_ref in self._table_info.action_refs:
+            if action_id == action_ref.id:
+                return True
+        return False
+
+    def add(self, action=None, weight=1, watch=0):
+        """Add an action to the oneshot action set."""
+        self.actions.append(OneshotAction(action, weight, watch))
+        return self
+
+    def msg(self):
+        msg = p4runtime_pb2.ActionProfileActionSet()
+        msg.action_profile_actions.extend([action.msg() for action in self.actions])
+        return msg
+
+    def _from_msg(self, msg):
+        for action in msg.action_profile_actions:
+            action_name = context.get_name_from_id(action.action.action_id)
+            a = Action(action_name)
+            a._from_msg(action.action)
+            self.actions.append(OneshotAction(a, action.weight, action.watch))
+
+    def __str__(self):
+        return str(self.msg())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self.msg()))
+
+
 class TableEntry(_EntityBase):
     @enum.unique
     class _ActionSpecType(enum.Enum):
@@ -935,7 +1097,7 @@ class TableEntry(_EntityBase):
         self._action_spec = None
         self.priority = 0
         self.is_default = False
-        ap = self._get_action_profile()
+        ap = _get_action_profile(table_name)
         if ap is None:
             self._support_members = False
             self._support_groups = False
@@ -1008,25 +1170,10 @@ For information about how to read table entries, use <self>.read?
 
         self._init = True
 
-    def _get_action_profile(self):
-        implementation_id = self._info.implementation_id
-        if implementation_id == 0:
-            return None
-        try:
-            implementation_name = context.get_name_from_id(implementation_id)
-        except KeyError:
-            raise InvalidP4InfoError(
-                "Invalid implementation_id {} for table '{}'".format(
-                    implementation_id, self.name))
-        ap = context.get_obj(P4Type.action_profile, implementation_name)
-        if ap is None:
-            raise InvalidP4InfoError("Unknown implementation for table '{}'".format(self.name))
-        return ap
-
     def __dir__(self):
         d = super().__dir__() + ["match", "priority", "is_default", "clear_action"]
         if self._support_groups:
-            d.extend(["member_id", "group_id"])
+            d.extend(["member_id", "group_id", "oneshot"])
         elif self._suport_members:
             d.append("member_id")
         else:
@@ -1064,7 +1211,8 @@ For information about how to read table entries, use <self>.read?
             raise UserError("group_id must be an integer")
         if not self._support_groups:
             raise UserError(
-                "Table does not have an action profile and therefore does not support groups")
+                "Table does not have an action profile with selector "
+                "and therefore does not support groups")
         super().__setattr__("_action_spec_type", self._ActionSpecType.GROUP_ID)
         super().__setattr__("_action_spec", group_id)
 
@@ -1085,6 +1233,23 @@ For information about how to read table entries, use <self>.read?
                 action.action_name))
         super().__setattr__("_action_spec_type", self._ActionSpecType.DIRECT_ACTION)
         super().__setattr__("_action_spec", action)
+
+    def _action_spec_set_oneshot(self, oneshot):
+        if type(oneshot) is None:
+            if self._action_spec_type == self._ActionSpecType.ONESHOT:
+                super().__setattr__("_action_spec_type", self._ActionSpecType.NONE)
+                super().__setattr__("_action_spec", None)
+            return
+        if not isinstance(oneshot, Oneshot):
+            raise UserError("oneshot must be an instance of Oneshot")
+        if not self._support_groups:
+            raise UserError(
+                "Table does not have an action profile with selector "
+                "and therefore does not support oneshot programming")
+        if self.name != oneshot.table_name:
+            raise UserError("This Oneshot instance was not created for this table")
+        super().__setattr__("_action_spec_type", self._ActionSpecType.ONESHOT)
+        super().__setattr__("_action_spec", oneshot)
 
     def __setattr__(self, name, value):
         if name[0] == "_" or not self._init:
@@ -1112,7 +1277,7 @@ For information about how to read table entries, use <self>.read?
             self._action_spec_set_group(value)
             return
         elif name == "oneshot":
-            raise NotSupportedYet("Setting 'oneshot'")
+            self._action_spec_set_oneshot(value)
         elif name == "action" and value is not None:
             self._action_spec_set_action(value)
             return
@@ -1120,12 +1285,15 @@ For information about how to read table entries, use <self>.read?
 
     def __getattr__(self, name):
         t = self._action_spec_name_to_type(name)
-        if t is not None:
-            if self._action_spec_type == t:
-                return self._action_spec
-            else:
-                return None
-        super().__getattr__(name)
+        if t is None:
+            raise AttributeError(name)
+        if self._action_spec_type == t:
+            return self._action_spec
+        if t == self._ActionSpecType.ONESHOT:
+            self._action_spec_type = self._ActionSpecType.ONESHOT
+            self._action_spec = Oneshot(self.name)
+            return self._action_spec
+        return None
 
     def _is_valid_action_id(self, action_id):
         for action_ref in self._info.action_refs:
@@ -1143,13 +1311,14 @@ For information about how to read table entries, use <self>.read?
             action = msg.action.action
             action_name = context.get_name_from_id(action.action_id)
             self.action = Action(action_name)
-            for p in action.params:
-                p_name = context.get_param_name(action_name, p.param_id)
-                self.action._param_values[p_name] = p
+            self.action._from_msg(action)
         elif msg.action.HasField('action_profile_member_id'):
             self.member_id = msg.action.action_profile_member_id
         elif msg.action.HasField('action_profile_group_id'):
             self.group_id = msg.action.action_profile_group_id
+        elif msg.action.HasField('action_profile_action_set'):
+            self.oneshot = Oneshot(self.name)
+            self.oneshot._from_msg(msg.action.action_profile_action_set)
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1176,12 +1345,13 @@ For information about how to read table entries, use <self>.read?
         entry.priority = self.priority
         entry.is_default_action = self.is_default
         if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
-            entry.action.action.action_id = self._action_spec._action_id
-            entry.action.action.params.extend(self._action_spec._param_values.values())
+            entry.action.action.CopyFrom(self._action_spec.msg())
         elif self._action_spec_type == self._ActionSpecType.MEMBER_ID:
             entry.action.action_profile_member_id = self._action_spec
         elif self._action_spec_type == self._ActionSpecType.GROUP_ID:
             entry.action.action_profile_group_id = self._action_spec
+        elif self._action_spec_type == self._ActionSpecType.ONESHOT:
+            entry.action.action_profile_action_set.CopyFrom(self._action_spec.msg())
         self._entry = entry
 
     def _validate_msg(self):
@@ -1429,6 +1599,8 @@ def main():
         "ActionProfileMember": ActionProfileMember,
         "GroupMember": GroupMember,
         "ActionProfileGroup": ActionProfileGroup,
+        "OneshotAction": OneshotAction,
+        "Oneshot": Oneshot,
         "p4info": context.p4info,
         "Write": Write,
     }
