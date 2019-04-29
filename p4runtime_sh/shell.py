@@ -22,7 +22,7 @@ from traitlets.config.loader import Config
 from IPython.terminal.prompts import Prompts, Token
 import os.path
 import sys
-from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException
+from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4runtime_error
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
@@ -633,6 +633,10 @@ class _EntityBase:
         self._update_msg()
         p.text(_repr_pretty_p4runtime(self._entry))
 
+    def __getattr__(self, name):
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            self.__class__.__name__, name))
+
     def msg(self):
         self._update_msg()
         return self._entry
@@ -676,21 +680,40 @@ class _EntityBase:
         getattr(entity, self._entity_type.name).CopyFrom(self._entry)
         iterator = client.read_one(entity)
 
-        def gen(it):
-            for rep in iterator:
-                for entity in rep.entities:
-                    e = type(self)(self.name)  # create new instance of same entity
-                    msg = getattr(entity, self._entity_type.name)
-                    e._from_msg(msg)
-                    # neither of these should be needed
-                    # e._update_msg()
-                    # e._entry.CopyFrom(msg)
-                    yield e
+        # Cannot use a (simpler) generator here as we need to decorate __next__ with
+        # @parse_p4runtime_error.
+        class _EntryIterator:
+            def __init__(self, entity, it):
+                self._entity = entity
+                self._it = it
+                self._entities_it = None
+
+            def __iter__(self):
+                return self
+
+            @parse_p4runtime_error
+            def __next__(self):
+                if self._entities_it is None:
+                    rep = next(self._it)
+                    self._entities_it = iter(rep.entities)
+                try:
+                    entity = next(self._entities_it)
+                except StopIteration:
+                    self._entities_it = None
+                    return next(self)
+
+                e = type(self._entity)(self._entity.name)  # create new instance of same entity
+                msg = getattr(entity, self._entity._entity_type.name)
+                e._from_msg(msg)
+                # neither of these should be needed
+                # e._update_msg()
+                # e._entry.CopyFrom(msg)
+                return e
 
         if function is None:
-            return gen(iterator)
+            return _EntryIterator(self, iterator)
         else:
-            for x in gen(iterator):
+            for x in _EntryIterator(self, iterator):
                 function(x)
 
 
@@ -1286,7 +1309,7 @@ For information about how to read table entries, use <self>.read?
     def __getattr__(self, name):
         t = self._action_spec_name_to_type(name)
         if t is None:
-            raise AttributeError(name)
+            return super().__getattr__(name)
         if self._action_spec_type == t:
             return self._action_spec
         if t == self._ActionSpecType.ONESHOT:
@@ -1426,7 +1449,7 @@ To write to the counter, use <self>.modify
             return self._entry.index.index
         if name == "byte_count" or name == "packet_count":
             return getattr(self._entry.data, name)
-        super().__getattr__(name)
+        return super().__getattr__(name)
 
     def _from_msg(self, msg):
         self._entry.CopyFrom(msg)
@@ -1437,6 +1460,109 @@ To write to the counter, use <self>.modify
         If function is None, returns an iterator. Iterate over it to get all the
         counter entries (CounterEntry instances) returned by the
         server. Otherwise, function is applied to all the counter entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
+        """
+        return super().read(function)
+
+
+class DirectCounterEntry(_EntityBase):
+    def __init__(self, direct_counter_name=None):
+        super().__init__(
+            P4Type.direct_counter, P4RuntimeEntity.direct_counter_entry,
+            p4runtime_pb2.DirectCounterEntry, direct_counter_name,
+            modify_only=True)
+        self._direct_table_id = self._info.direct_table_id
+        try:
+            self._direct_table_name = context.get_name_from_id(self._direct_table_id)
+        except KeyError:
+            raise InvalidP4InfoError("direct_table_id {} is not a valid table id".format(
+                self._direct_table_id))
+        self._table_entry = TableEntry(self._direct_table_name)
+        self.__doc__ = """
+An entry for direct counter '{}'
+
+Use <self>.info to display the P4Info entry for this direct counter.
+
+Set the table_entry with <self>.table_entry = <TableEntry instance>.
+The TableEntry instance must be for the table to which the direct counter is attached.
+To reset it (e.g. for wildcard read), set it to None. It is the same as:
+<self>.table_entry = TableEntry({})
+
+Access byte count and packet count with <self>.byte_count / <self>.packet_count.
+
+To read from the counter, use <self>.read
+To write to the counter, use <self>.modify
+""".format(direct_counter_name, self._direct_table_name)
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + ["table_entry", "byte_count", "packet_count"]
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "name":
+            raise UserError("Cannot change direct counter name")
+        if name == "index":
+            raise UserError("Direct counters are not index-based")
+        if name == "table_entry":
+            if value is None:
+                self._table_entry = TableEntry(self._direct_table_name)
+                return
+            if not isinstance(value, TableEntry):
+                raise UserError("table_entry must be an instance of TableEntry")
+            if value.name != self._direct_table_name:
+                raise UserError("This DirectCounterEntry is for table '{}'".format(
+                    self._direct_table_name))
+            self._table_entry = value
+            return
+        if name == "byte_count" or name == "packet_count":
+            if type(value) is not int:
+                raise UserError("{} must be an integer".format(name))
+            setattr(self._entry.data, name, value)
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "index":
+            raise UserError("Direct counters are not index-based")
+        if name == "table_entry":
+            return self._table_entry
+        if name == "byte_count" or name == "packet_count":
+            return getattr(self._entry.data, name)
+        return super().__getattr__(name)
+
+    def _update_msg(self):
+        if self._table_entry is None:
+            self._entry.ClearField('table_entry')
+        else:
+            self._entry.table_entry.CopyFrom(self._table_entry.msg())
+
+    def _from_msg(self, msg):
+        self._entry.CopyFrom(msg)
+        if msg.HasField('table_entry'):
+            self._table_entry._from_msg(msg.table_entry)
+        else:
+            self._table_entry = None
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the index unset).
+        If function is None, returns an iterator. Iterate over it to get all the
+        direct counter entries (DirectCounterEntry instances) returned by the
+        server. Otherwise, function is applied to all the direct counter entries
         returned by the server.
 
         For example:
@@ -1596,6 +1722,7 @@ def main():
         "MatchKey": MatchKey,
         "Action": Action,
         "CounterEntry": CounterEntry,
+        "DirectCounterEntry": DirectCounterEntry,
         "ActionProfileMember": ActionProfileMember,
         "GroupMember": GroupMember,
         "ActionProfileGroup": ActionProfileGroup,
@@ -1611,6 +1738,7 @@ def main():
     supported_entities = [
         (P4RuntimeEntity.table_entry, P4Type.table, TableEntry),
         (P4RuntimeEntity.counter_entry, P4Type.counter, CounterEntry),
+        (P4RuntimeEntity.direct_counter_entry, P4Type.direct_counter, DirectCounterEntry),
         (P4RuntimeEntity.action_profile_member, P4Type.action_profile, ActionProfileMember),
         (P4RuntimeEntity.action_profile_group, P4Type.action_profile, ActionProfileGroup),
     ]

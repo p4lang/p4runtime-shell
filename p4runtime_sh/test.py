@@ -19,6 +19,7 @@ import google.protobuf.text_format
 from google.rpc import code_pb2
 import grpc
 from io import StringIO
+import itertools
 import logging
 import unittest
 from unittest.mock import ANY, Mock, patch
@@ -27,6 +28,7 @@ from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 import p4runtime_sh.shell as sh
 from p4runtime_sh.context import P4Type, P4RuntimeEntity
+from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
 
@@ -150,6 +152,61 @@ class UnitTestCase(BaseTestCase):
             rep.entities.add().CopyFrom(entity)
             yield rep
         return _Read
+
+    @nose2.tools.params((1, 100), (100, 1), (10, 100))
+    def test_read_iterator(self, num_reps, num_entities_per_rep):
+        ce = sh.CounterEntry("CounterA")
+
+        def gen_entities():
+            for i in itertools.count():
+                x = p4runtime_pb2.Entity()
+                counter_entry = x.counter_entry
+                counter_entry.counter_id = 302055013
+                counter_entry.index.index = i
+                counter_entry.data.packet_count = 100
+                yield x
+
+        def make_read_mock(num_reps, num_entities_per_rep):
+            it = gen_entities()
+
+            def _Read(request, context):
+                for i in range(num_reps):
+                    rep = p4runtime_pb2.ReadResponse()
+                    for j in range(num_entities_per_rep):
+                        rep.entities.add().CopyFrom(next(it))
+                    yield rep
+
+            return _Read
+
+        self.servicer.Read.side_effect = make_read_mock(num_reps, num_entities_per_rep)
+
+        cnt = [0]
+
+        def inc(x):
+            cnt[0] += 1
+
+        for x in ce.read():
+            inc(x)
+        self.assertEqual(cnt[0], num_reps * num_entities_per_rep)
+
+        cnt[0] = 0
+        ce.read(inc)
+        self.assertEqual(cnt[0], num_reps * num_entities_per_rep)
+
+    def test_read_error(self):
+        ce = sh.CounterEntry("CounterA")
+
+        def _Read(request, context):
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            yield p4runtime_pb2.ReadResponse()
+
+        self.servicer.Read.side_effect = _Read
+
+        with self.assertRaises(P4RuntimeException):
+            next(ce.read())
+
+        with self.assertRaises(P4RuntimeException):
+            ce.read(lambda _: True)
 
     def test_table_entry_exact(self):
         te = sh.TableEntry("ExactOne")(action="actionA")
@@ -522,6 +579,52 @@ data {
             p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.counter_entry, expected_entry)
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+    def test_direct_counter_entry(self):
+        ce = sh.DirectCounterEntry("ExactOne_counter")
+        ce.table_entry.match["header_test.field32"] = "10.0.0.0"
+        ce.packet_count = 100
+        expected_entry = """
+table_entry {
+  table_id: 33582705
+  match {
+    field_id: 1
+    exact {
+      value: "\\x0a\\x00\\x00\\x00"
+    }
+  }
+}
+data {
+  packet_count: 100
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.direct_counter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        ce.table_entry = None
+        expected_entry = """
+table_entry {
+  table_id: 33582705
+}
+data {
+  packet_count: 100
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.direct_counter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+    def test_direct_counter_entry_invalid(self):
+        ce = sh.DirectCounterEntry("ExactOne_counter")
+        with self.assertRaisesRegex(UserError, "table_entry must be an instance of TableEntry"):
+            ce.table_entry = 0xbad
+        with self.assertRaisesRegex(UserError, "This DirectCounterEntry is for table"):
+            ce.table_entry = sh.TableEntry("TernaryOne")
+        with self.assertRaisesRegex(UserError, "Direct counters are not index-based"):
+            ce.index = 1
 
 
 class P4RuntimeClientTestCase(BaseTestCase):
