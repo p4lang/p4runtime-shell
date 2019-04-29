@@ -264,6 +264,8 @@ class P4RuntimeClient:
         req.updates.extend([update])
         return self.stub.Write(req)
 
+    # Decorator is useless here: in case of server error, the exception is raised during the
+    # iteration (when next() is called).
     @parse_p4runtime_error
     def read_one(self, entity):
         req = p4runtime_pb2.ReadRequest()
