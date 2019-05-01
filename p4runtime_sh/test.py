@@ -580,6 +580,16 @@ data {
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
+    def test_counter_entry_invalid(self):
+        ce = sh.CounterEntry("CounterA")
+        ce.index = 99
+        with self.assertRaisesRegex(UserError, "Counter 'CounterA' is of type 'PACKETS'"):
+            ce.byte_count = 1
+        self.assertIsNone(ce._data)
+        with self.assertRaisesRegex(UserError, "Counter 'CounterA' is of type 'PACKETS'"):
+            ce.data.byte_count = 1
+        self.assertIsNotNone(ce._data)
+
     def test_direct_counter_entry(self):
         ce = sh.DirectCounterEntry("ExactOne_counter")
         ce.table_entry.match["header_test.field32"] = "10.0.0.0"
@@ -617,6 +627,37 @@ data {
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
+    def test_direct_counter_entry_2(self):
+        te = sh.TableEntry("ExactOne")(action="actionA")
+        te.match["header_test.field32"] = "10.0.0.0"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.counter_data.packet_count = 100
+        expected_entry = """
+table_id: 33582705
+match {
+  field_id: 1
+  exact {
+    value: "\\x0a\\x00\\x00\\x00"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+counter_data {
+  packet_count: 100
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        te.insert()
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_direct_counter_entry_invalid(self):
         ce = sh.DirectCounterEntry("ExactOne_counter")
         with self.assertRaisesRegex(UserError, "table_entry must be an instance of TableEntry"):
@@ -625,6 +666,14 @@ data {
             ce.table_entry = sh.TableEntry("TernaryOne")
         with self.assertRaisesRegex(UserError, "Direct counters are not index-based"):
             ce.index = 1
+
+        te = sh.TableEntry("LpmOne")(action="actionA")
+        with self.assertRaisesRegex(UserError, "Table has no direct counter"):
+            te.counter_data.packet_count = 100
+
+        te = sh.TableEntry("ExactOne")(action="actionA")
+        with self.assertRaisesRegex(UserError, "Counter 'ExactOne_counter' is of type 'PACKETS"):
+            te.counter_data.byte_count = 100
 
 
 class P4RuntimeClientTestCase(BaseTestCase):

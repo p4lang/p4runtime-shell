@@ -1093,6 +1093,74 @@ You can also access the set of actions with <self>.actions (which is a Python li
         p.text(str(self.msg()))
 
 
+class _CounterData:
+    @staticmethod
+    def attrs_for_counter_type(counter_type):
+        attrs = []
+        if counter_type in {p4info_pb2.CounterSpec.BYTES, p4info_pb2.CounterSpec.BOTH}:
+            attrs.append("byte_count")
+        if counter_type in {p4info_pb2.CounterSpec.PACKETS, p4info_pb2.CounterSpec.BOTH}:
+            attrs.append("packet_count")
+        return attrs
+
+    def __init__(self, counter_name, counter_type):
+        self._counter_name = counter_name
+        self._counter_type = counter_type
+        self._msg = p4runtime_pb2.CounterData()
+        self._attrs = _CounterData.attrs_for_counter_type(counter_type)
+
+    def __dir__(self):
+        return self._attrs
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name not in self._attrs:
+            type_name = p4info_pb2._COUNTERSPEC_UNIT.values_by_number[self._counter_type].name
+            raise UserError("Counter '{}' is of type '{}', you cannot set '{}'".format(
+                self._counter_name, type_name, name))
+        if type(value) is not int:
+            raise UserError("{} must be an integer".format(name))
+        setattr(self._msg, name, value)
+
+    def __getattr__(self, name):
+        if name == "byte_count" or name == "packet_count":
+            return getattr(self._msg, name)
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            self.__class__.__name__, name))
+
+    def msg(self):
+        return self._msg
+
+    def _from_msg(self, msg):
+        self._msg.CopyFrom(msg)
+
+    def __str__(self):
+        return str(self.msg())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self.msg()))
+
+    @classmethod
+    def set_count(cls, instance, counter_name, counter_type, name, value):
+        if instance is None:
+            d = cls(counter_name, counter_type)
+        else:
+            d = instance
+        setattr(d, name, value)
+        return d
+
+    @classmethod
+    def get_count(cls, instance, counter_name, counter_type, name):
+        if instance is None:
+            d = cls(counter_name, counter_type)
+        else:
+            d = instance
+        r = getattr(d, name)
+        return d, r
+
+
 class TableEntry(_EntityBase):
     @enum.unique
     class _ActionSpecType(enum.Enum):
@@ -1127,6 +1195,15 @@ class TableEntry(_EntityBase):
         else:
             self._support_members = True
             self._support_groups = ap.with_selector
+        self._direct_counter = None
+        self._direct_meter = None
+        for res_id in self._info.direct_resource_ids:
+            prefix = (res_id & 0xff000000) >> 24
+            if prefix == p4info_pb2.P4Ids.DIRECT_COUNTER:
+                self._direct_counter = context.get_obj_by_id(res_id)
+            elif prefix == p4info_pb2.P4Ids.DIRECT_METER:
+                self._direct_meter = context.get_obj_by_id(res_id)
+        self._counter_data = None
         self.__doc__ = """
 An entry for table '{}'
 
@@ -1135,6 +1212,11 @@ Use <self>.info to display the P4Info entry for this table.
 To set the match key, use <self>.match['<field name>'] = <expr>.
 Type <self>.match? for more details.
 """.format(table_name)
+        if self._direct_counter is not None:
+            self.__doc__ += """
+To set the counter spec, use <self>.counter_data.byte_count and/or <self>.counter_data.packet_count.
+To unset it, use <self>.counter_data = None or <self>.clear_counter_data().
+"""
         if ap is None:
             self.__doc__ += """
 To set the action specification (this is a direct table):
@@ -1194,13 +1276,17 @@ For information about how to read table entries, use <self>.read?
         self._init = True
 
     def __dir__(self):
-        d = super().__dir__() + ["match", "priority", "is_default", "clear_action"]
+        d = super().__dir__() + [
+            "match", "priority", "is_default",
+            "clear_action", "clear_match", "clear_counter_data"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
         elif self._suport_members:
             d.append("member_id")
         else:
             d.append("action")
+        if self._direct_counter is not None:
+            d.extend(_CounterData.attrs_for_counter_type(self._direct_counter.spec.unit))
         return d
 
     def __call__(self, **kwargs):
@@ -1304,9 +1390,24 @@ For information about how to read table entries, use <self>.read?
         elif name == "action" and value is not None:
             self._action_spec_set_action(value)
             return
+        elif name == "counter_data":
+            if self._direct_counter is None:
+                raise UserError("Table has no direct counter")
+            if value is None:
+                self._counter_data = None
+                return
+            raise UserError("Cannot set 'counter_data' directly")
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
+        if name == "counter_data":
+            if self._direct_counter is None:
+                raise UserError("Table has no direct counter")
+            if self._counter_data is None:
+                self._counter_data = _CounterData(
+                    self._direct_counter.preamble.name, self._direct_counter.spec.unit)
+            return self._counter_data
+
         t = self._action_spec_name_to_type(name)
         if t is None:
             return super().__getattr__(name)
@@ -1342,6 +1443,12 @@ For information about how to read table entries, use <self>.read?
         elif msg.action.HasField('action_profile_action_set'):
             self.oneshot = Oneshot(self.name)
             self.oneshot._from_msg(msg.action.action_profile_action_set)
+        if msg.HasField('counter_data'):
+            self._counter_data = _CounterData(
+                self._direct_counter.preamble.name, self._direct_counter.spec.unit)
+            self._counter_data._from_msg(msg.counter_data)
+        else:
+            self._counter_data = None
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1375,6 +1482,10 @@ For information about how to read table entries, use <self>.read?
             entry.action.action_profile_group_id = self._action_spec
         elif self._action_spec_type == self._ActionSpecType.ONESHOT:
             entry.action.action_profile_action_set.CopyFrom(self._action_spec.msg())
+        if self._counter_data is None:
+            entry.ClearField('counter_data')
+        else:
+            entry.counter_data.CopyFrom(self._counter_data.msg())
         self._entry = entry
 
     def _validate_msg(self):
@@ -1392,8 +1503,74 @@ For information about how to read table entries, use <self>.read?
         """Clears the match spec for the TableEntry."""
         self.match.clear()
 
+    def clear_counter_data(self):
+        """Clear all counter data, same as <self>.counter_data = None"""
+        self._counter_data = None
 
-class CounterEntry(_EntityBase):
+
+class _CounterEntryBase(_EntityBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._counter_type = self._info.spec.unit
+        self._data = None
+
+    def __dir__(self):
+        return super().__dir__() + _CounterData.attrs_for_counter_type(self._counter_type) + [
+            "clear_data"]
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "name":
+            raise UserError("Cannot change counter name")
+        if name == "byte_count" or name == "packet_count":
+            self._data = _CounterData.set_count(
+                self._data, self.name, self._counter_type, name, value)
+            return
+        if name == "data":
+            if value is None:
+                self._data = None
+                return
+            raise UserError("Cannot set 'data' directly")
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "byte_count" or name == "packet_count":
+            self._data, r = _CounterData.get_count(
+                self._data, self.name, self._counter_type, name)
+            return r
+        if name == "data":
+            if self._data is None:
+                self._data = _CounterData(self.name, self._counter_type)
+            return self._data
+        return super().__getattr__(name)
+
+    def _from_msg(self, msg):
+        self._entry.CopyFrom(msg)
+        if msg.HasField('data'):
+            self._data = _CounterData(self.name, self._counter_type)
+            self._data._from_msg(msg.data)
+        else:
+            self._data = None
+
+    def _update_msg(self):
+        if self._data is None:
+            self._entry.ClearField('data')
+        else:
+            self._entry.data.CopyFrom(self._data.msg())
+
+    def clear_data(self):
+        """Clear all counter data, same as <self>.data = None"""
+        self._data = None
+
+
+class CounterEntry(_CounterEntryBase):
     def __init__(self, counter_name=None):
         super().__init__(
             P4Type.counter, P4RuntimeEntity.counter_entry,
@@ -1416,19 +1593,9 @@ To write to the counter, use <self>.modify
         self._init = True
 
     def __dir__(self):
-        return super().__dir__() + ["index", "byte_count", "packet_count"]
-
-    def __call__(self, **kwargs):
-        for name, value in kwargs.items():
-            setattr(self, name, value)
-        return self
+        return super().__dir__() + ["index", "data"]
 
     def __setattr__(self, name, value):
-        if name[0] == "_" or not self._init:
-            super().__setattr__(name, value)
-            return
-        if name == "name":
-            raise UserError("Cannot change counter name")
         if name == "index":
             if value is None:
                 self._entry.ClearField('index')
@@ -1437,22 +1604,12 @@ To write to the counter, use <self>.modify
                 raise UserError("index must be an integer")
             self._entry.index.index = value
             return
-        if name == "byte_count" or name == "packet_count":
-            if type(value) is not int:
-                raise UserError("{} must be an integer".format(name))
-            setattr(self._entry.data, name, value)
-            return
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
         if name == "index":
             return self._entry.index.index
-        if name == "byte_count" or name == "packet_count":
-            return getattr(self._entry.data, name)
         return super().__getattr__(name)
-
-    def _from_msg(self, msg):
-        self._entry.CopyFrom(msg)
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1471,7 +1628,7 @@ To write to the counter, use <self>.modify
         return super().read(function)
 
 
-class DirectCounterEntry(_EntityBase):
+class DirectCounterEntry(_CounterEntryBase):
     def __init__(self, direct_counter_name=None):
         super().__init__(
             P4Type.direct_counter, P4RuntimeEntity.direct_counter_entry,
@@ -1502,19 +1659,9 @@ To write to the counter, use <self>.modify
         self._init = True
 
     def __dir__(self):
-        return super().__dir__() + ["table_entry", "byte_count", "packet_count"]
-
-    def __call__(self, **kwargs):
-        for name, value in kwargs.items():
-            setattr(self, name, value)
-        return self
+        return super().__dir__() + ["table_entry"]
 
     def __setattr__(self, name, value):
-        if name[0] == "_" or not self._init:
-            super().__setattr__(name, value)
-            return
-        if name == "name":
-            raise UserError("Cannot change direct counter name")
         if name == "index":
             raise UserError("Direct counters are not index-based")
         if name == "table_entry":
@@ -1528,11 +1675,6 @@ To write to the counter, use <self>.modify
                     self._direct_table_name))
             self._table_entry = value
             return
-        if name == "byte_count" or name == "packet_count":
-            if type(value) is not int:
-                raise UserError("{} must be an integer".format(name))
-            setattr(self._entry.data, name, value)
-            return
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
@@ -1540,18 +1682,17 @@ To write to the counter, use <self>.modify
             raise UserError("Direct counters are not index-based")
         if name == "table_entry":
             return self._table_entry
-        if name == "byte_count" or name == "packet_count":
-            return getattr(self._entry.data, name)
         return super().__getattr__(name)
 
     def _update_msg(self):
+        super()._update_msg()
         if self._table_entry is None:
             self._entry.ClearField('table_entry')
         else:
             self._entry.table_entry.CopyFrom(self._table_entry.msg())
 
     def _from_msg(self, msg):
-        self._entry.CopyFrom(msg)
+        super()._from_msg(msg)
         if msg.HasField('table_entry'):
             self._table_entry._from_msg(msg.table_entry)
         else:

@@ -61,8 +61,8 @@ class Context:
     def set_p4info(self, p4info):
         self.p4info = p4info
         self.p4info_obj_map = {}
+        self.p4info_obj_map_by_id = {}
         self.p4info_objs_by_type = {}
-        self.p4info_id_to_name = {}
         self._import_p4info_names()
 
     def get_obj(self, obj_type, name):
@@ -121,7 +121,10 @@ class Context:
             yield name, obj
 
     def get_name_from_id(self, id_):
-        return self.p4info_id_to_name[id_]
+        return self.p4info_obj_map_by_id[id_].preamble.name
+
+    def get_obj_by_id(self, id_):
+        return self.p4info_obj_map_by_id[id_]
 
     # In order to make the CLI easier to use, we accept any suffix that
     # uniquely identifies the object among p4info objects of the same type.
@@ -131,7 +134,7 @@ class Context:
             self.p4info_objs_by_type[obj_type] = {}
             for obj in getattr(self.p4info, obj_type.p4info_name):
                 pre = obj.preamble
-                self.p4info_id_to_name[pre.id] = pre.name
+                self.p4info_obj_map_by_id[pre.id] = obj
                 self.p4info_objs_by_type[obj_type][pre.name] = obj
                 suffix = None
                 for s in reversed(pre.name.split(".")):
