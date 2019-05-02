@@ -1161,6 +1161,66 @@ class _CounterData:
         return d, r
 
 
+class _MeterConfig:
+    @staticmethod
+    def attrs():
+        return ["cir", "cburst", "pir", "pburst"]
+
+    def __init__(self, meter_name, meter_type):
+        self._meter_name = meter_name
+        self._meter_type = meter_type
+        self._msg = p4runtime_pb2.MeterConfig()
+        self._attrs = _MeterConfig.attrs()
+
+    def __dir__(self):
+        return self._attrs
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name in self._attrs:
+            if type(value) is not int:
+                raise UserError("{} must be an integer".format(name))
+        setattr(self._msg, name, value)
+
+    def __getattr__(self, name):
+        if name in self._attrs:
+            return getattr(self._msg, name)
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            self.__class__.__name__, name))
+
+    def msg(self):
+        return self._msg
+
+    def _from_msg(self, msg):
+        self._msg.CopyFrom(msg)
+
+    def __str__(self):
+        return str(self.msg())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self.msg()))
+
+    @classmethod
+    def set_param(cls, instance, meter_name, meter_type, name, value):
+        if instance is None:
+            d = cls(meter_name, meter_type)
+        else:
+            d = instance
+        setattr(d, name, value)
+        return d
+
+    @classmethod
+    def get_param(cls, instance, meter_name, meter_type, name):
+        if instance is None:
+            d = cls(meter_name, meter_type)
+        else:
+            d = instance
+        r = getattr(d, name)
+        return d, r
+
+
 class TableEntry(_EntityBase):
     @enum.unique
     class _ActionSpecType(enum.Enum):
@@ -1204,6 +1264,7 @@ class TableEntry(_EntityBase):
             elif prefix == p4info_pb2.P4Ids.DIRECT_METER:
                 self._direct_meter = context.get_obj_by_id(res_id)
         self._counter_data = None
+        self._meter_config = None
         self.__doc__ = """
 An entry for table '{}'
 
@@ -1216,6 +1277,11 @@ Type <self>.match? for more details.
             self.__doc__ += """
 To set the counter spec, use <self>.counter_data.byte_count and/or <self>.counter_data.packet_count.
 To unset it, use <self>.counter_data = None or <self>.clear_counter_data().
+"""
+        if self._direct_meter is not None:
+            self.__doc__ += """
+To access the meter config, use <self>.meter_config.<cir|cburst|pir|pburst>.
+To unset it, use <self>.meter_config = None or <self>.clear_meter_config().
 """
         if ap is None:
             self.__doc__ += """
@@ -1278,7 +1344,7 @@ For information about how to read table entries, use <self>.read?
     def __dir__(self):
         d = super().__dir__() + [
             "match", "priority", "is_default",
-            "clear_action", "clear_match", "clear_counter_data"]
+            "clear_action", "clear_match", "clear_counter_data", "clear_meter_config"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
         elif self._suport_members:
@@ -1286,7 +1352,9 @@ For information about how to read table entries, use <self>.read?
         else:
             d.append("action")
         if self._direct_counter is not None:
-            d.extend(_CounterData.attrs_for_counter_type(self._direct_counter.spec.unit))
+            d.append("counter_data")
+        if self._direct_meter is not None:
+            d.append("meter_config")
         return d
 
     def __call__(self, **kwargs):
@@ -1397,6 +1465,13 @@ For information about how to read table entries, use <self>.read?
                 self._counter_data = None
                 return
             raise UserError("Cannot set 'counter_data' directly")
+        elif name == "meter_config":
+            if self._direct_meter is None:
+                raise UserError("Table has no direct meter")
+            if value is None:
+                self._meter_config = None
+                return
+            raise UserError("Cannot set 'meter_config' directly")
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
@@ -1407,6 +1482,13 @@ For information about how to read table entries, use <self>.read?
                 self._counter_data = _CounterData(
                     self._direct_counter.preamble.name, self._direct_counter.spec.unit)
             return self._counter_data
+        if name == "meter_config":
+            if self._direct_meter is None:
+                raise UserError("Table has no direct meter")
+            if self._meter_config is None:
+                self._meter_config = _MeterConfig(
+                    self._direct_meter.preamble.name, self._direct_meter.spec.unit)
+            return self._meter_config
 
         t = self._action_spec_name_to_type(name)
         if t is None:
@@ -1449,6 +1531,12 @@ For information about how to read table entries, use <self>.read?
             self._counter_data._from_msg(msg.counter_data)
         else:
             self._counter_data = None
+        if msg.HasField('meter_config'):
+            self._meter_config = _MeterConfig(
+                self._direct_meter.preamble.name, self._direct_meter.spec.unit)
+            self._meter_config._from_msg(msg.meter_config)
+        else:
+            self._meter_config = None
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1486,6 +1574,10 @@ For information about how to read table entries, use <self>.read?
             entry.ClearField('counter_data')
         else:
             entry.counter_data.CopyFrom(self._counter_data.msg())
+        if self._meter_config is None:
+            entry.ClearField('meter_config')
+        else:
+            entry.meter_config.CopyFrom(self._meter_config.msg())
         self._entry = entry
 
     def _validate_msg(self):
@@ -1506,6 +1598,10 @@ For information about how to read table entries, use <self>.read?
     def clear_counter_data(self):
         """Clear all counter data, same as <self>.counter_data = None"""
         self._counter_data = None
+
+    def clear_meter_config(self):
+        """Clear the meter config, same as <self>.meter_config = None"""
+        self._meter_config = None
 
 
 class _CounterEntryBase(_EntityBase):
@@ -1715,6 +1811,220 @@ To write to the counter, use <self>.modify
         return super().read(function)
 
 
+class _MeterEntryBase(_EntityBase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._meter_type = self._info.spec.unit
+        self._config = None
+
+    def __dir__(self):
+        return super().__dir__() + _MeterConfig.attrs() + ["clear_config"]
+
+    def __call__(self, **kwargs):
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+        return self
+
+    def __setattr__(self, name, value):
+        if name[0] == "_" or not self._init:
+            super().__setattr__(name, value)
+            return
+        if name == "name":
+            raise UserError("Cannot change meter name")
+        if name in _MeterConfig.attrs():
+            self._config = _MeterConfig.set_param(
+                self._config, self.name, self._meter_type, name, value)
+            return
+        if name == "config":
+            if value is None:
+                self._config = None
+                return
+            raise UserError("Cannot set 'config' directly")
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name in _MeterConfig.attrs():
+            self._config, r = _MeterConfig.get_count(
+                self._config, self.name, self._meter_type, name)
+            return r
+        if name == "config":
+            if self._config is None:
+                self._config = _MeterConfig(self.name, self._meter_type)
+            return self._config
+        return super().__getattr__(name)
+
+    def _from_msg(self, msg):
+        self._entry.CopyFrom(msg)
+        if msg.HasField('config'):
+            self._config = _MeterConfig(self.name, self._meter_type)
+            self._config._from_msg(msg.config)
+        else:
+            self._config = None
+
+    def _update_msg(self):
+        if self._config is None:
+            self._entry.ClearField('config')
+        else:
+            self._entry.config.CopyFrom(self._config.msg())
+
+    def clear_config(self):
+        """Clear the meter config, same as <self>.config = None"""
+        self._config = None
+
+
+class MeterEntry(_MeterEntryBase):
+    def __init__(self, meter_name=None):
+        super().__init__(
+            P4Type.meter, P4RuntimeEntity.meter_entry,
+            p4runtime_pb2.MeterEntry, meter_name,
+            modify_only=True)
+        self._entry.meter_id = self.id
+        self.__doc__ = """
+An entry for meter '{}'
+
+Use <self>.info to display the P4Info entry for this meter.
+
+Set the index with <self>.index = <expr>.
+To reset it (e.g. for wildcard read), set it to None.
+
+Access meter rates and burst sizes with:
+<self>.cir
+<self>.cburst
+<self>.pir
+<self>.pburst
+
+To read from the meter, use <self>.read
+To write to the meter, use <self>.modify
+""".format(meter_name)
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + ["index", "config"]
+
+    def __setattr__(self, name, value):
+        if name == "index":
+            if value is None:
+                self._entry.ClearField('index')
+                return
+            if type(value) is not int:
+                raise UserError("index must be an integer")
+            self._entry.index.index = value
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "index":
+            return self._entry.index.index
+        return super().__getattr__(name)
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the index unset).
+        If function is None, returns an iterator. Iterate over it to get all the
+        meter entries (MeterEntry instances) returned by the
+        server. Otherwise, function is applied to all the meter entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
+        """
+        return super().read(function)
+
+
+class DirectMeterEntry(_MeterEntryBase):
+    def __init__(self, direct_meter_name=None):
+        super().__init__(
+            P4Type.direct_meter, P4RuntimeEntity.direct_meter_entry,
+            p4runtime_pb2.DirectMeterEntry, direct_meter_name,
+            modify_only=True)
+        self._direct_table_id = self._info.direct_table_id
+        try:
+            self._direct_table_name = context.get_name_from_id(self._direct_table_id)
+        except KeyError:
+            raise InvalidP4InfoError("direct_table_id {} is not a valid table id".format(
+                self._direct_table_id))
+        self._table_entry = TableEntry(self._direct_table_name)
+        self.__doc__ = """
+An entry for direct meter '{}'
+
+Use <self>.info to display the P4Info entry for this direct meter.
+
+Set the table_entry with <self>.table_entry = <TableEntry instance>.
+The TableEntry instance must be for the table to which the direct meter is attached.
+To reset it (e.g. for wildcard read), set it to None. It is the same as:
+<self>.table_entry = TableEntry({})
+
+Access meter rates and burst sizes with:
+<self>.cir
+<self>.cburst
+<self>.pir
+<self>.pburst
+
+To read from the meter, use <self>.read
+To write to the meter, use <self>.modify
+""".format(direct_meter_name, self._direct_table_name)
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + ["table_entry"]
+
+    def __setattr__(self, name, value):
+        if name == "index":
+            raise UserError("Direct meters are not index-based")
+        if name == "table_entry":
+            if value is None:
+                self._table_entry = TableEntry(self._direct_table_name)
+                return
+            if not isinstance(value, TableEntry):
+                raise UserError("table_entry must be an instance of TableEntry")
+            if value.name != self._direct_table_name:
+                raise UserError("This DirectMeterEntry is for table '{}'".format(
+                    self._direct_table_name))
+            self._table_entry = value
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "index":
+            raise UserError("Direct meters are not index-based")
+        if name == "table_entry":
+            return self._table_entry
+        return super().__getattr__(name)
+
+    def _update_msg(self):
+        super()._update_msg()
+        if self._table_entry is None:
+            self._entry.ClearField('table_entry')
+        else:
+            self._entry.table_entry.CopyFrom(self._table_entry.msg())
+
+    def _from_msg(self, msg):
+        super()._from_msg(msg)
+        if msg.HasField('table_entry'):
+            self._table_entry._from_msg(msg.table_entry)
+        else:
+            self._table_entry = None
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the index unset).
+        If function is None, returns an iterator. Iterate over it to get all the
+        direct meter entries (DirectMeterEntry instances) returned by the
+        server. Otherwise, function is applied to all the direct meter entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
+        """
+        return super().read(function)
+
+
 class P4RuntimeEntityBuilder:
     def __init__(self, obj_type, entity_type, entity_cls):
         self._obj_type = obj_type
@@ -1864,6 +2174,8 @@ def main():
         "Action": Action,
         "CounterEntry": CounterEntry,
         "DirectCounterEntry": DirectCounterEntry,
+        "MeterEntry": MeterEntry,
+        "DirectMeterEntry": DirectMeterEntry,
         "ActionProfileMember": ActionProfileMember,
         "GroupMember": GroupMember,
         "ActionProfileGroup": ActionProfileGroup,
@@ -1880,6 +2192,8 @@ def main():
         (P4RuntimeEntity.table_entry, P4Type.table, TableEntry),
         (P4RuntimeEntity.counter_entry, P4Type.counter, CounterEntry),
         (P4RuntimeEntity.direct_counter_entry, P4Type.direct_counter, DirectCounterEntry),
+        (P4RuntimeEntity.meter_entry, P4Type.meter, MeterEntry),
+        (P4RuntimeEntity.direct_meter_entry, P4Type.direct_meter, DirectMeterEntry),
         (P4RuntimeEntity.action_profile_member, P4Type.action_profile, ActionProfileMember),
         (P4RuntimeEntity.action_profile_group, P4Type.action_profile, ActionProfileGroup),
     ]

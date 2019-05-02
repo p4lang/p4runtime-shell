@@ -153,6 +153,16 @@ class UnitTestCase(BaseTestCase):
             yield rep
         return _Read
 
+    def simple_read_check(self, entity, obj, entity_type):
+        """A very simple and generic check for the read() operation on every entity. It builds a
+        Read mock that will return the desired entity. It then calls read() on the provided object
+        (TableEntry, CounterEntry, ...) and makes sure that the returned entity is converted
+        properly to a Python object."""
+        self.servicer.Read.side_effect = self.make_read_mock(entity)
+        entity_read = next(obj.read())
+        self.servicer.Read.assert_called_once_with(ANY, ANY)
+        self.assertEqual(str(entity_read.msg()), str(getattr(entity, entity_type.name)))
+
     @nose2.tools.params((1, 100), (100, 1), (10, 100))
     def test_read_iterator(self, num_reps, num_entities_per_rep):
         ce = sh.CounterEntry("CounterA")
@@ -513,11 +523,7 @@ action {
             p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
-        entity = expected_req.updates[0].entity
-        self.servicer.Read.side_effect = self.make_read_mock(entity)
-        te_read = next(te.read())
-        self.servicer.Read.assert_called_once_with(ANY, ANY)
-        self.assertEqual(str(te_read.msg()), str(entity.table_entry))
+        self.simple_read_check(expected_req.updates[0].entity, te, P4RuntimeEntity.table_entry)
 
     def test_table_info(self):
         t = sh.P4Objects(P4Type.table)["ExactOne"]
@@ -568,6 +574,8 @@ data {
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
+        self.simple_read_check(expected_req.updates[0].entity, ce, P4RuntimeEntity.counter_entry)
+
         ce.index = None
         expected_entry = """
 counter_id: 302055013
@@ -612,6 +620,9 @@ data {
             p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.direct_counter_entry, expected_entry)
         ce.modify()
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(
+            expected_req.updates[0].entity, ce, P4RuntimeEntity.direct_counter_entry)
 
         ce.table_entry = None
         expected_entry = """
@@ -658,6 +669,8 @@ counter_data {
         te.insert()
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
+        self.simple_read_check(expected_req.updates[0].entity, te, P4RuntimeEntity.table_entry)
+
     def test_direct_counter_entry_invalid(self):
         ce = sh.DirectCounterEntry("ExactOne_counter")
         with self.assertRaisesRegex(UserError, "table_entry must be an instance of TableEntry"):
@@ -674,6 +687,161 @@ counter_data {
         te = sh.TableEntry("ExactOne")(action="actionA")
         with self.assertRaisesRegex(UserError, "Counter 'ExactOne_counter' is of type 'PACKETS"):
             te.counter_data.byte_count = 100
+
+    def test_meter_entry(self):
+        ce = sh.MeterEntry("MeterA")
+        ce.index = 99
+        ce.cir = 1
+        ce.cburst = 2
+        ce.pir = 3
+        ce.pburst = 4
+        expected_entry = """
+meter_id: 335597387
+index {
+  index: 99
+}
+config {
+  cir: 1
+  cburst: 2
+  pir: 3
+  pburst: 4
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.meter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(expected_req.updates[0].entity, ce, P4RuntimeEntity.meter_entry)
+
+        ce.index = None
+        expected_entry = """
+meter_id: 335597387
+config {
+  cir: 1
+  cburst: 2
+  pir: 3
+  pburst: 4
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.meter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+    def test_direct_meter_entry(self):
+        ce = sh.DirectMeterEntry("ExactOne_meter")
+        ce.table_entry.match["header_test.field32"] = "10.0.0.0"
+        ce.cir = 1
+        ce.cburst = 2
+        ce.pir = 3
+        ce.pburst = 4
+        expected_entry = """
+table_entry {
+  table_id: 33582705
+  match {
+    field_id: 1
+    exact {
+      value: "\\x0a\\x00\\x00\\x00"
+    }
+  }
+}
+config {
+  cir: 1
+  cburst: 2
+  pir: 3
+  pburst: 4
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.direct_meter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(
+            expected_req.updates[0].entity, ce, P4RuntimeEntity.direct_meter_entry)
+
+        ce.table_entry = None
+        expected_entry = """
+table_entry {
+  table_id: 33582705
+}
+config {
+  cir: 1
+  cburst: 2
+  pir: 3
+  pburst: 4
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.MODIFY, P4RuntimeEntity.direct_meter_entry, expected_entry)
+        ce.modify()
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+    def test_direct_meter_entry_2(self):
+        te = sh.TableEntry("ExactOne")(action="actionA")
+        te.match["header_test.field32"] = "10.0.0.0"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.meter_config.cir = 1
+        te.meter_config.cburst = 2
+        te.meter_config.pir = 3
+        te.meter_config.pburst = 4
+        expected_entry = """
+table_id: 33582705
+match {
+  field_id: 1
+  exact {
+    value: "\\x0a\\x00\\x00\\x00"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+meter_config {
+  cir: 1
+  cburst: 2
+  pir: 3
+  pburst: 4
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        te.insert()
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(expected_req.updates[0].entity, te, P4RuntimeEntity.table_entry)
+
+    def test_direct_meter_entry_invalid(self):
+        ce = sh.DirectMeterEntry("ExactOne_meter")
+        with self.assertRaisesRegex(UserError, "table_entry must be an instance of TableEntry"):
+            ce.table_entry = 0xbad
+        with self.assertRaisesRegex(UserError, "This DirectMeterEntry is for table"):
+            ce.table_entry = sh.TableEntry("TernaryOne")
+        with self.assertRaisesRegex(UserError, "Direct meters are not index-based"):
+            ce.index = 1
+
+        te = sh.TableEntry("LpmOne")(action="actionA")
+        with self.assertRaisesRegex(UserError, "Table has no direct meter"):
+            te.meter_config.cir = 100
+
+    @nose2.tools.params((sh.CounterEntry, "CounterA"), (sh.DirectCounterEntry, "ExactOne_counter"),
+                        (sh.MeterEntry, "MeterA"), (sh.DirectMeterEntry, "ExactOne_meter"))
+    def test_modify_only(self, cls, name):
+        e = cls(name)
+
+        with self.assertRaisesRegex(NotImplementedError, "Insert not supported"):
+            e.insert()
+        self.assertNotIn("insert", dir(e))
+
+        with self.assertRaisesRegex(NotImplementedError, "Delete not supported"):
+            e.delete()
+        self.assertNotIn("delete", dir(e))
 
 
 class P4RuntimeClientTestCase(BaseTestCase):
