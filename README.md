@@ -2,8 +2,7 @@
 
 [![Build Status](https://travis-ci.org/p4lang/p4runtime-shell.svg?branch=master)](https://travis-ci.org/p4lang/p4runtime-shell)
 
-**This is a work in progress and the number of supported P4Runtime features is
-  limited.**
+**This is still a work in progress. Feedback is welcome.**
 
 p4runtime-sh is an interactive Python shell for
 [P4Runtime](https://github.com/p4lang/p4runtime) based on
@@ -53,7 +52,15 @@ config files in the docker if needed):
 `direct_meters` (named after the P4Info message fields) to query information
 about P4Info objects.
 
-`table_entry` for runtime table programming.
+`table_entry`, `action_profile_member`, `action_profile_group`, `counter_entry`,
+`direct_counter_entry`, `meter_entry`, `direct_meter_entry` (named after the
+P4Runtime `Entity` fields) for runtime entity programming.
+
+The `Write` command can be used to read a `WriteRequest` message from a file
+(for now, Protobuf text format only) and send it to a server:
+```
+Write <path to file encoding WriteRequest message in text format>
+```
 
 Type the command name followed by `?` for information on each command,
 e.g. `table_entry?`.
