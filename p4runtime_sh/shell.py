@@ -746,7 +746,7 @@ m.action['<pM>'] = ...
 m.insert
 
 For information about how to read members, use <self>.read?
-"""
+""".format(action_profile_name)
         self._init = True
 
     def __dir__(self):
@@ -891,7 +891,7 @@ g.add(<member id 2>)
 # OR g.add(<member id 1>).add(<member id 2>)
 
 For information about how to read groups, use <self>.read?
-"""
+""".format(action_profile_name)
         self._init = True
 
     def __dir__(self):
