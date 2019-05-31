@@ -2150,6 +2150,10 @@ def main():
             logging.critical(e)
             client.tear_down()
             sys.exit(1)
+        except Exception:
+            logging.critical("Error when setting config")
+            client.tear_down()
+            sys.exit(1)
 
     try:
         p4info = client.get_p4info()
