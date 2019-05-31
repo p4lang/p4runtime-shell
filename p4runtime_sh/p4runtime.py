@@ -234,7 +234,11 @@ class P4RuntimeClient:
         req.action = p4runtime_pb2.SetForwardingPipelineConfigRequest.VERIFY_AND_COMMIT
         with open(p4info_path, 'r') as f1:
             with open(bin_path, 'rb') as f2:
-                google.protobuf.text_format.Merge(f1.read(), req.config.p4info)
+                try:
+                    google.protobuf.text_format.Merge(f1.read(), req.config.p4info)
+                except google.protobuf.text_format.ParseError:
+                    logging.error("Error when parsing P4Info")
+                    raise
                 req.config.p4_device_config = f2.read()
         return self.stub.SetForwardingPipelineConfig(req)
 
