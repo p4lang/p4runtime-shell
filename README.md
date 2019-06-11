@@ -54,7 +54,8 @@ about P4Info objects.
 
 `table_entry`, `action_profile_member`, `action_profile_group`, `counter_entry`,
 `direct_counter_entry`, `meter_entry`, `direct_meter_entry` (named after the
-P4Runtime `Entity` fields) for runtime entity programming.
+P4Runtime `Entity` fields), along with `multicast_group_entry` and
+`clone_session_entry`, for runtime entity programming.
 
 The `Write` command can be used to read a `WriteRequest` message from a file
 (for now, Protobuf text format only) and send it to a server:

@@ -597,20 +597,14 @@ class Action:
 
 
 class _EntityBase:
-    def __init__(self, p4_type, entity_type, p4runtime_cls, name=None, modify_only=False):
+    def __init__(self, entity_type, p4runtime_cls, modify_only=False):
         self._init = False
-        self._p4_type = p4_type
         self._entity_type = entity_type
-        if name is None:
-            raise UserError("Please provide name for {}".format(p4_type.pretty_name))
-        self.name = name
-        self._info = P4Objects(p4_type)[name]
-        self.id = self._info.id
         self._entry = p4runtime_cls()
         self._modify_only = modify_only
 
     def __dir__(self):
-        d = ["name", "id", "msg", "info", "read"]
+        d = ["msg", "read"]
         if self._modify_only:
             d.append("modify")
         else:
@@ -649,10 +643,6 @@ class _EntityBase:
         getattr(update.entity, self._entity_type.name).CopyFrom(self._entry)
         client.write_update(update)
 
-    def info(self):
-        """Display P4Info entry for the object"""
-        return self._info
-
     def insert(self):
         if self._modify_only:
             raise NotImplementedError("Insert not supported for {}".format(self._entity_type.name))
@@ -678,6 +668,7 @@ class _EntityBase:
         self._validate_msg()
         entity = p4runtime_pb2.Entity()
         getattr(entity, self._entity_type.name).CopyFrom(self._entry)
+
         iterator = client.read_one(entity)
 
         # Cannot use a (simpler) generator here as we need to decorate __next__ with
@@ -702,7 +693,10 @@ class _EntityBase:
                     self._entities_it = None
                     return next(self)
 
-                e = type(self._entity)(self._entity.name)  # create new instance of same entity
+                if isinstance(self._entity, _P4EntityBase):
+                    e = type(self._entity)(self._entity.name)  # create new instance of same entity
+                else:
+                    e = type(self._entity)()
                 msg = getattr(entity, self._entity._entity_type.name)
                 e._from_msg(msg)
                 # neither of these should be needed
@@ -717,7 +711,25 @@ class _EntityBase:
                 function(x)
 
 
-class ActionProfileMember(_EntityBase):
+class _P4EntityBase(_EntityBase):
+    def __init__(self, p4_type, entity_type, p4runtime_cls, name=None, modify_only=False):
+        super().__init__(entity_type, p4runtime_cls, modify_only)
+        self._p4_type = p4_type
+        if name is None:
+            raise UserError("Please provide name for {}".format(p4_type.pretty_name))
+        self.name = name
+        self._info = P4Objects(p4_type)[name]
+        self.id = self._info.id
+
+    def __dir__(self):
+        return super().__dir__() + ["name", "id", "info"]
+
+    def info(self):
+        """Display P4Info entry for the object"""
+        return self._info
+
+
+class ActionProfileMember(_P4EntityBase):
     def __init__(self, action_profile_name=None):
         super().__init__(
             P4Type.action_profile, P4RuntimeEntity.action_profile_member,
@@ -865,7 +877,7 @@ class GroupMember:
         p.text(str(p))
 
 
-class ActionProfileGroup(_EntityBase):
+class ActionProfileGroup(_P4EntityBase):
     def __init__(self, action_profile_name=None):
         super().__init__(
             P4Type.action_profile, P4RuntimeEntity.action_profile_group,
@@ -1221,7 +1233,7 @@ class _MeterConfig:
         return d, r
 
 
-class TableEntry(_EntityBase):
+class TableEntry(_P4EntityBase):
     @enum.unique
     class _ActionSpecType(enum.Enum):
         NONE = 0
@@ -1604,7 +1616,7 @@ For information about how to read table entries, use <self>.read?
         self._meter_config = None
 
 
-class _CounterEntryBase(_EntityBase):
+class _CounterEntryBase(_P4EntityBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._counter_type = self._info.spec.unit
@@ -1811,7 +1823,7 @@ To write to the counter, use <self>.modify
         return super().read(function)
 
 
-class _MeterEntryBase(_EntityBase):
+class _MeterEntryBase(_P4EntityBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._meter_type = self._info.spec.unit
@@ -2059,6 +2071,198 @@ Use command '{}' to see list of {}
         return "Construct a {} entity".format(self.entity_cls.__name__)
 
 
+class Replica:
+    """
+    A port "replica" (port number + instance id) used for multicast and clone session programming.
+    Construct with Replica(egress_port, instance=<instance>).
+    You can set / get attributes egress_port (required), instance (default 0).
+    """
+    def __init__(self, egress_port=None, instance=0):
+        if egress_port is None:
+            raise UserError("egress_port is required")
+        self._msg = p4runtime_pb2.Replica()
+        self._msg.egress_port = egress_port
+        self._msg.instance = instance
+
+    def __dir__(self):
+        return ["port", "egress_port", "instance"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name == "egress_port" or name == "port":
+            if type(value) is not int:
+                raise UserError("egress_port must be an integer")
+            self._msg.egress_port = value
+            return
+        if name == "instance":
+            if type(value) is not int:
+                raise UserError("instance must be an integer")
+            self._msg.instance = value
+            return
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "egress_port" or name == "port":
+            return self._msg.egress_port
+        if name == "instance":
+            return self._msg.instance
+        return super().__getattr__(name)
+
+    def __str__(self):
+        return str(self._msg)
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(p))
+
+
+class MulticastGroupEntry(_EntityBase):
+    def __init__(self, group_id=0):
+        super().__init__(
+            P4RuntimeEntity.packet_replication_engine_entry,
+            p4runtime_pb2.PacketReplicationEngineEntry)
+        self.group_id = group_id
+        self.replicas = []
+        self.__doc__ = """
+Multicast group entry.
+Create an instance with multicast_group_entry(<group_id>).
+Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instance_2>)...
+"""
+        self._init = True
+
+    def __dir__(self):
+        return ["group_id", "replicas"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        elif name == "group_id":
+            if type(value) is not int:
+                raise UserError("group_id must be an integer")
+        elif name == "replicas":
+            if type(value) is not list:
+                raise UserError("replicas must be a list of Replica objects")
+            for r in value:
+                if type(r) is not Replica:
+                    raise UserError("replicas must be a list of Replica objects")
+        super().__setattr__(name, value)
+
+    def _from_msg(self, msg):
+        self.group_id = msg.multicast_group_entry.multicast_group_id
+        for r in msg.multicast_group_entry.replicas:
+            self.add(r.egress_port, r.instance)
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC to read a single MulticastGroupEntry
+        (wildcard reads not supported).
+        If function is None, return a MulticastGroupEntry instance (or None if
+        the provided group id does not exist). If function is not None, function
+        is applied to the MulticastGroupEntry instance (if any).
+        """
+        if function is None:
+            return next(super().read())
+        else:
+            super().read(function)
+
+    def _update_msg(self):
+        entry = p4runtime_pb2.PacketReplicationEngineEntry()
+        mcg_entry = entry.multicast_group_entry
+        mcg_entry.multicast_group_id = self.group_id
+        for replica in self.replicas:
+            r = mcg_entry.replicas.add()
+            r.CopyFrom(replica._msg)
+        self._entry = entry
+
+    def _validate_msg(self):
+        if self.group_id == 0:
+            raise UserError("0 is not a valid group_id for MulticastGroupEntry")
+
+    def add(self, egress_port=None, instance=0):
+        """Add a replica to the multicast group."""
+        self.replicas.append(Replica(egress_port, instance))
+        return self
+
+
+class CloneSessionEntry(_EntityBase):
+    def __init__(self, session_id=0):
+        super().__init__(
+            P4RuntimeEntity.packet_replication_engine_entry,
+            p4runtime_pb2.PacketReplicationEngineEntry)
+        self.session_id = session_id
+        self.replicas = []
+        self.cos = 0
+        self.packet_length_bytes = 0
+        self.__doc__ = """
+Clone session entry.
+Create an instance with clone_session_entry(<session_id>).
+Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instance_2>)...
+Access class of service with <self>.cos.
+Access truncation length with <self>.packet_length_bytes.
+"""
+        self._init = True
+
+    def __dir__(self):
+        return ["session_id", "replicas", "cos", "packet_length_bytes"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        elif name == "session_id":
+            if type(value) is not int:
+                raise UserError("session_id must be an integer")
+        elif name == "replicas":
+            if type(value) is not list:
+                raise UserError("replicas must be a list of Replica objects")
+            for r in value:
+                if type(r) is not Replica:
+                    raise UserError("replicas must be a list of Replica objects")
+        elif name == "cos":
+            if type(value) is not int:
+                raise UserError("cos must be an integer")
+        elif name == "packet_length_bytes":
+            if type(value) is not int:
+                raise UserError("packet_length_bytes must be an integer")
+        super().__setattr__(name, value)
+
+    def _from_msg(self, msg):
+        self.session_id = msg.clone_session_entry.session_id
+        for r in msg.clone_session_entry.replicas:
+            self.add(r.egress_port, r.instance)
+        self.cos = msg.clone_session_entry.class_of_service
+        self.packet_length_bytes = msg.clone_session_entry.packet_length_bytes
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC to read a single CloneSessionEntry
+        (wildcard reads not supported).
+        If function is None, return a CloneSessionEntry instance (or None if
+        the provided group id does not exist). If function is not None, function
+        is applied to the CloneSessionEntry instance (if any).
+        """
+        if function is None:
+            return next(super().read())
+        else:
+            super().read(function)
+
+    def _update_msg(self):
+        entry = p4runtime_pb2.PacketReplicationEngineEntry()
+        cs_entry = entry.clone_session_entry
+        cs_entry.session_id = self.session_id
+        for replica in self.replicas:
+            r = cs_entry.replicas.add()
+            r.CopyFrom(replica._msg)
+        cs_entry.class_of_service = self.cos
+        cs_entry.packet_length_bytes = self.packet_length_bytes
+        self._entry = entry
+
+    def add(self, egress_port=None, instance=0):
+        """Add a replica to the clone session."""
+        self.replicas.append(Replica(egress_port, instance))
+        return self
+
+
 def Write(input_):
     """
     Reads a WriteRequest from a file (text format) and sends it to the server.
@@ -2187,6 +2391,9 @@ def main():
         "Oneshot": Oneshot,
         "p4info": context.p4info,
         "Write": Write,
+        "Replica": Replica,
+        "MulticastGroupEntry": MulticastGroupEntry,
+        "CloneSessionEntry": CloneSessionEntry,
     }
 
     for obj_type in P4Type:
@@ -2203,6 +2410,9 @@ def main():
     ]
     for entity, p4type, cls in supported_entities:
         user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)
+
+    user_ns["multicast_group_entry"] = MulticastGroupEntry
+    user_ns["clone_session_entry"] = CloneSessionEntry
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
