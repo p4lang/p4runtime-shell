@@ -52,6 +52,7 @@ class P4RuntimeEntity(enum.Enum):
     direct_meter_entry = 5
     counter_entry = 6
     direct_counter_entry = 7
+    packet_replication_engine_entry = 8
 
 
 class Context:

@@ -153,13 +153,16 @@ class UnitTestCase(BaseTestCase):
             yield rep
         return _Read
 
-    def simple_read_check(self, entity, obj, entity_type):
+    def simple_read_check(self, entity, obj, entity_type, expect_iterator=True):
         """A very simple and generic check for the read() operation on every entity. It builds a
         Read mock that will return the desired entity. It then calls read() on the provided object
         (TableEntry, CounterEntry, ...) and makes sure that the returned entity is converted
         properly to a Python object."""
         self.servicer.Read.side_effect = self.make_read_mock(entity)
-        entity_read = next(obj.read())
+        if expect_iterator:
+            entity_read = next(obj.read())
+        else:
+            entity_read = obj.read()
         self.servicer.Read.assert_called_once_with(ANY, ANY)
         self.assertEqual(str(entity_read.msg()), str(getattr(entity, entity_type.name)))
 
@@ -842,6 +845,80 @@ meter_config {
         with self.assertRaisesRegex(NotImplementedError, "Delete not supported"):
             e.delete()
         self.assertNotIn("delete", dir(e))
+
+    def test_multicast_group_entry(self):
+        mcge = sh.MulticastGroupEntry(1)
+        mcge.add(1, 1).add(1, 2).add(2, 3)
+
+        expected_entry = """
+multicast_group_entry {
+  multicast_group_id: 1
+  replicas {
+    egress_port: 1
+    instance: 1
+  }
+  replicas {
+    egress_port: 1
+    instance: 2
+  }
+  replicas {
+    egress_port: 2
+    instance: 3
+  }
+}
+"""
+
+        mcge.insert()
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT,
+            P4RuntimeEntity.packet_replication_engine_entry,
+            expected_entry)
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(
+            expected_req.updates[0].entity, mcge, P4RuntimeEntity.packet_replication_engine_entry,
+            expect_iterator=False)
+
+    def test_multicast_group_entry_invalid(self):
+        mcge = sh.MulticastGroupEntry()
+        mcge.add(1, 1)
+        with self.assertRaisesRegex(UserError, "0 is not a valid group_id"):
+            mcge.insert()
+
+    def test_clone_session_entry(self):
+        cse = sh.CloneSessionEntry(1)
+        cse.add(1, 1).add(1, 2).add(2, 3)
+
+        expected_entry = """
+clone_session_entry {
+  session_id: 1
+  replicas {
+    egress_port: 1
+    instance: 1
+  }
+  replicas {
+    egress_port: 1
+    instance: 2
+  }
+  replicas {
+    egress_port: 2
+    instance: 3
+  }
+}
+"""
+
+        cse.insert()
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT,
+            P4RuntimeEntity.packet_replication_engine_entry,
+            expected_entry)
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+        self.simple_read_check(
+            expected_req.updates[0].entity, cse, P4RuntimeEntity.packet_replication_engine_entry,
+            expect_iterator=False)
 
 
 class P4RuntimeClientTestCase(BaseTestCase):
