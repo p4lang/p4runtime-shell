@@ -2332,19 +2332,20 @@ def get_arg_parser():
     return parser
 
 
-def main():
-    parser = get_arg_parser()
-    args = parser.parse_args()
-    if args.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-
-    logging.debug("Creating P4Runtime client")
+def setup(device_id=1, grpc_addr='localhost:50051', election_id=(1, 0), config=None):
     global client
-    client = P4RuntimeClient(args.device_id, args.grpc_addr, args.election_id)
+    logging.debug("Creating P4Runtime client")
+    client = P4RuntimeClient(device_id, grpc_addr, election_id)
 
-    if args.config is not None:
+    try:
+        p4info_path = config.p4info
+        bin_path = config.bin
+    except Exception:
+        raise ValueError("Argument 'config' must be a FwdPipeConfig namedtuple")
+
+    if config is not None:
         try:
-            client.set_fwd_pipe_config(args.config.p4info, args.config.bin)
+            client.set_fwd_pipe_config(p4info_path, bin_path)
         except FileNotFoundError as e:
             logging.critical(e)
             client.tear_down()
@@ -2369,6 +2370,22 @@ def main():
 
     logging.debug("Parsing P4Info message")
     context.set_p4info(p4info)
+
+
+def teardown():
+    global client
+    logging.debug("Tearing down P4Runtime client")
+    client.tear_down()
+    client = None
+
+
+def main():
+    parser = get_arg_parser()
+    args = parser.parse_args()
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    setup(args.device_id, args.grpc_addr, args.election_id, args.config)
 
     c = Config()
     c.TerminalInteractiveShell.banner1 = '*** Welcome to the IPython shell for P4Runtime ***'

@@ -245,3 +245,34 @@ P4Runtime sh >>> table_entry["FabricIngress.forwarding.routing_v4"].read(lambda 
 
 P4Runtime sh >>>
 ```
+
+## Using p4runtime-shell in scripts
+
+You can also leverage this project as a convenient P4Runtime wrapper to
+programmatically program switches using Pyhton scripts:
+
+```python
+import p4runtime_sh.shell as sh
+
+# you can omit the config argument if the switch is already configured with the
+# correct P4 dataplane.
+sh.setup(
+    device_id=1,
+    grpc_addr='localhost:50051',
+    election_id=(0, 1), # (high, low)
+    config=sh.FwdPipeConfig('config/p4info.pb.txt', 'config/device_config.bin')
+)
+
+# see p4runtime_sh/test.py for more examples
+te = sh.TableEntry('<table_name>')(action='<action_name>')
+te.match['<name>'] = '<value>'
+te.action['<name>'] = '<value>'
+te.insert()
+
+# ...
+
+sh.teardown()
+```
+
+Note that at the moment the P4Runtime client object is a global variable, which
+means that we only support one P4Runtime connection to a single switch.

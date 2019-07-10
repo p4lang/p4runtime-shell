@@ -126,14 +126,13 @@ class UnitTestCase(BaseTestCase):
         self.servicer.Read = Mock(spec=[], return_value=p4runtime_pb2.ReadResponse())
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
-        sh.client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
-        sh.client.set_fwd_pipe_config(self._p4info_path, self._config_path)
-        self.p4info = sh.client.get_p4info()
-        sh.context.set_p4info(self.p4info)
+        sh.setup(device_id=self.device_id,
+                 grpc_addr=self.grpc_addr,
+                 election_id=self.election_id,
+                 config=sh.FwdPipeConfig(self._p4info_path, self._config_path))
 
     def tearDown(self):
-        sh.client.tear_down()
-        sh.client = None
+        sh.teardown()
         super().tearDown()
 
     def make_write_request(self, update_type, entity_type, expected_txt):
