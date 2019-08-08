@@ -13,4 +13,5 @@ install:
 
 script:
   - docker run -ti p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && flake8 p4runtime_sh config_builders"
-  - docker run -ti p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && nose2 p4runtime_sh config_builders"
+  - ci_env=`bash <(curl -s https://codecov.io/env)`
+  - docker run $ci_env -ti p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && nose2 --with-coverage p4runtime_sh config_builders && codecov"
