@@ -4,6 +4,13 @@ SHELL ["/bin/bash", "-c"]
 
 WORKDIR /p4runtime-sh/
 
+ENV PKG_DEPS git
+
+# git is required for codecov
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends $PKG_DEPS && \
+    rm -rf /var/cache/apt/* /var/lib/apt/lists/*
+
 RUN source $VENV/bin/activate && \
     pip3 install -r requirements-dev.txt && \
     rm -rf ~/.cache/pip

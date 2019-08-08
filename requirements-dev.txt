@@ -1,3 +1,4 @@
 flake8
 nose2
 callee
+codecov
