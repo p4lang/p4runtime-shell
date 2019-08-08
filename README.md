@@ -42,9 +42,18 @@ config files in the docker if needed):
 ```
 
 *If you are a Linux user, you can follow this
- [guide](https://docs.docker.com/install/linux/linux-postinstall/) to run docker
+ [guide](https://docs.docker.com/install/linux/linux-postinstall/) to run Docker
  commands without `sudo`. You will be able to use `p4runtime-sh-docker` as a
  non-privileged user.*
+
+*If you are using the Docker image to run p4runtime-shell and you are trying to
+ connect to a P4Runtime server running natively on the same system and listening
+ on the localhost interface, you will not be able to connect to the server using
+ `--grpc-addr localhost:<port>` or `--grpc-addr 127.0.0.1:<port>`. Instead, you
+ should have your P4Runtime server listen on all interfaces (`0.0.0.0`) and you
+ will need to use the IP address assigned to the Docker bridge (`docker0` by
+ default) or the IP address assigned to the local network management interface
+ (e.g. `eth0`).*
 
 ## Available commands
 
