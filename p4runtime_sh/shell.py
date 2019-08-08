@@ -2337,13 +2337,13 @@ def setup(device_id=1, grpc_addr='localhost:50051', election_id=(1, 0), config=N
     logging.debug("Creating P4Runtime client")
     client = P4RuntimeClient(device_id, grpc_addr, election_id)
 
-    try:
-        p4info_path = config.p4info
-        bin_path = config.bin
-    except Exception:
-        raise ValueError("Argument 'config' must be a FwdPipeConfig namedtuple")
-
     if config is not None:
+        try:
+            p4info_path = config.p4info
+            bin_path = config.bin
+        except Exception:
+            raise ValueError("Argument 'config' must be a FwdPipeConfig namedtuple")
+
         try:
             client.set_fwd_pipe_config(p4info_path, bin_path)
         except FileNotFoundError as e:

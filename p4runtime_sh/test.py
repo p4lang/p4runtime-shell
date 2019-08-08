@@ -80,10 +80,9 @@ class BaseTestCase(unittest.TestCase):
         super().setUp()
         self.serve()
 
-    def run_sh(self, input=None):
+    def run_sh(self, args=[], input=None):
         r = subprocess.run(
-            ["./p4runtime-sh", "--grpc-addr", self.grpc_addr,
-             "--config", ",".join([self._p4info_path, self._config_path])],
+            ["./p4runtime-sh", "--grpc-addr", self.grpc_addr] + args,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             input=input)
         return r.returncode, r.stdout
@@ -100,7 +99,11 @@ class IPythonTestCase(BaseTestCase):
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
     def test_run_and_exit(self):
-        rc, _ = self.run_sh()
+        rc, _ = self.run_sh(args=["--config", ",".join([self._p4info_path, self._config_path])])
+        self.assertEqual(rc, 0)
+
+    def test_run_no_config(self):
+        rc, _ = self.run_sh(args=[])
         self.assertEqual(rc, 0)
 
 
