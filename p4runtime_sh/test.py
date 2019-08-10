@@ -13,6 +13,11 @@
 # limitations under the License.
 #
 
+import os
+# ensures that IPython uses a "simple prompt"
+# see run_sh() in BaseTestClass for more details
+os.environ['IPY_TEST_SIMPLE_PROMPT'] = '1'  # noqa
+
 from callee import Matcher
 from concurrent import futures
 import google.protobuf.text_format
@@ -23,7 +28,6 @@ import itertools
 import logging
 import unittest
 from unittest.mock import ANY, Mock, patch
-import subprocess
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 import p4runtime_sh.shell as sh
@@ -80,12 +84,28 @@ class BaseTestCase(unittest.TestCase):
         super().setUp()
         self.serve()
 
-    def run_sh(self, args=[], input=None):
-        r = subprocess.run(
-            ["./p4runtime-sh", "--grpc-addr", self.grpc_addr] + args,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            input=input)
-        return r.returncode, r.stdout
+    def run_sh(self, args=[]):
+        new_args = ["p4runtime-sh", "--grpc-addr", self.grpc_addr] + args
+        rc = 0
+        stdout = None
+        with patch('sys.argv', new_args):
+            with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+                # patching input() only works in simple_prompt mode
+                # we could also raise EOFError as a side_effect, it seems that it does not required
+                # confirmation in simple_prompt mode
+                # https://ipython.readthedocs.io/en/stable/config/options/terminal.html#configtrait-TerminalInteractiveShell.simple_prompt
+                # the best way to do that is to set IPY_TEST_SIMPLE_PROMPT, but this needs to be
+                # done before importing IPython, which we do at the beginning of the file
+                # an alternative is to patch the
+                # IPython.terminal.interactiveshell.TerminalInteractiveShell object so that the
+                # 'simple_prompt' attribute is True.
+                with patch('builtins.input', return_value="exit"):
+                    try:
+                        sh.main()
+                    except SystemExit as e:
+                        rc = e.code
+                    stdout = mock_stdout.getvalue()
+        return rc, stdout
 
     def tearDown(self):
         self.server.stop(None)
