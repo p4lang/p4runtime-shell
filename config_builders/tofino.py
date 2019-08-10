@@ -72,5 +72,5 @@ def main():
     build_config(args.name, args.ctx_json, args.tofino_bin, args.out)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()
