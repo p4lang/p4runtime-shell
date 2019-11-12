@@ -1359,7 +1359,7 @@ For information about how to read table entries, use <self>.read?
             "clear_action", "clear_match", "clear_counter_data", "clear_meter_config"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
-        elif self._suport_members:
+        elif self._support_members:
             d.append("member_id")
         else:
             d.append("action")
