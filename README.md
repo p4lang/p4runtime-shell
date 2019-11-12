@@ -11,7 +11,12 @@ p4runtime-sh is an interactive Python shell for
 ## Using the shell
 
 We recommend that you download the Docker image (~200MB) and use it, but you can
-also build the image directly with `docker build -t p4lang/p4runtime-sh .`.
+also build the image directly with:
+```bash
+git clone --recursive https://github.com/p4lang/p4runtime-shell
+cd p4runtime-shell
+docker build -t p4lang/p4runtime-sh .
+```
 
 Run the shell as follows:
 ```bash
