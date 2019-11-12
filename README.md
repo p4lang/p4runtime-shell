@@ -246,7 +246,7 @@ action {
   action {
     action_id: 16777434 ("FabricIngress.forwarding.set_next_id_routing_v4")
     params {
-      param_id: 1 ("None")
+      param_id: 1 ("next_id")
       value: "\\x00\\x00\\x00\\x0a"
     }
   }
