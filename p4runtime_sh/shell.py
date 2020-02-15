@@ -2279,6 +2279,14 @@ def Write(input_):
                 input_))
 
 
+def APIVersion():
+    """
+    Returns the version of the P4Runtime API implemented by the server, using
+    the Capabilities RPC.
+    """
+    return client.api_version()
+
+
 # see https://ipython.readthedocs.io/en/stable/config/details.html
 class MyPrompt(Prompts):
     def in_prompt_tokens(self, cli=None):
@@ -2411,6 +2419,7 @@ def main():
         "Replica": Replica,
         "MulticastGroupEntry": MulticastGroupEntry,
         "CloneSessionEntry": CloneSessionEntry,
+        "APIVersion": APIVersion,
     }
 
     for obj_type in P4Type:
