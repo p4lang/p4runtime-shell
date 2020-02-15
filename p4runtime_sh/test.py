@@ -40,6 +40,7 @@ import nose2.tools
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
     def __init__(self):
         self.p4info = p4info_pb2.P4Info()
+        self.p4runtime_api_version = "1.2.0-dev"
 
     def GetForwardingPipelineConfig(self, request, context):
         rep = p4runtime_pb2.GetForwardingPipelineConfigResponse()
@@ -64,6 +65,11 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
                 rep.arbitration.CopyFrom(req.arbitration)
                 rep.arbitration.status.code = code_pb2.OK
                 yield rep
+
+    def Capabilities(self, request, context):
+        rep = p4runtime_pb2.CapabilitiesResponse()
+        rep.p4runtime_api_version = self.p4runtime_api_version
+        return rep
 
 
 class BaseTestCase(unittest.TestCase):
@@ -941,6 +947,10 @@ clone_session_entry {
         self.simple_read_check(
             expected_req.updates[0].entity, cse, P4RuntimeEntity.packet_replication_engine_entry,
             expect_iterator=False)
+
+    def test_p4runtime_api_version(self):
+        version = sh.APIVersion()
+        self.assertEqual(version, self.servicer.p4runtime_api_version)
 
 
 class P4RuntimeClientTestCase(BaseTestCase):

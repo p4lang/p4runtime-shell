@@ -276,3 +276,9 @@ class P4RuntimeClient:
         req.device_id = self.device_id
         req.entities.extend([entity])
         return self.stub.Read(req)
+
+    @parse_p4runtime_error
+    def api_version(self):
+        req = p4runtime_pb2.CapabilitiesRequest()
+        rep = self.stub.Capabilities(req)
+        return rep.p4runtime_api_version

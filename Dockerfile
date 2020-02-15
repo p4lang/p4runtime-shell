@@ -2,15 +2,15 @@ FROM p4lang/third-party:stable AS deps
 
 SHELL ["/bin/bash", "-c"]
 
-COPY . /p4runtime-sh/
-WORKDIR /p4runtime-sh/
-
 ENV PKG_DEPS git python3 python3-venv
 ENV VENV /p4runtime-sh/venv
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends $PKG_DEPS && \
     rm -rf /var/cache/apt/* /var/lib/apt/lists/*
+
+COPY . /p4runtime-sh/
+WORKDIR /p4runtime-sh/
 
 RUN python3 -m venv $VENV && \
     source $VENV/bin/activate && \
