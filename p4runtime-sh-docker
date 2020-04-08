@@ -68,7 +68,7 @@ def main():
         fname_p4info = "p4info.pb.txt"
         fname_bin = "config.bin"
 
-        tmpdir = tempfile.mkdtemp()
+        tmpdir = tempfile.mkdtemp(dir="/tmp")
         logging.debug(
             "Created temporary directory '{}', it will be mounted in the docker as '{}'".format(
                 tmpdir, mount_path))
