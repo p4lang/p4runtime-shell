@@ -79,7 +79,7 @@ def main():
         new_args.extend(["--config", "{},{}".format(
             os.path.join(mount_path, fname_p4info), os.path.join(mount_path, fname_bin))])
 
-    cmd = ["docker", "run", "-ti"]
+    cmd = ["docker", "run", "-ti", "--rm"]
     cmd.extend(docker_args)
     cmd.append(args.docker_image)
     cmd.extend(new_args)
