@@ -85,6 +85,8 @@ e.g. `table_entry?`.
 Here is some of what you can do when using p4runtime-sh with ONF's
 [fabric.p4](https://github.com/opennetworkinglab/onos/blob/master/pipelines/fabric/src/main/resources/fabric.p4).
 
+More examples of usage can be found in the [usage/ folder](usage/).
+
 ```python
 *** Welcome to the IPython shell for P4Runtime ***
 P4Runtime sh >>> tables
