@@ -14,9 +14,6 @@
 #
 
 import os
-# ensures that IPython uses a "simple prompt"
-# see run_sh() in BaseTestClass for more details
-os.environ['IPY_TEST_SIMPLE_PROMPT'] = '1'  # noqa
 
 from callee import Matcher
 from concurrent import futures
@@ -30,11 +27,15 @@ import unittest
 from unittest.mock import ANY, Mock, patch
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
-import p4runtime_sh.shell as sh
 from p4runtime_sh.context import P4Type, P4RuntimeEntity
 from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
+
+# ensures that IPython uses a "simple prompt"
+# see run_sh() in BaseTestCase for more details
+os.environ['IPY_TEST_SIMPLE_PROMPT'] = '1'
+import p4runtime_sh.shell as sh  # noqa: E402
 
 
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
