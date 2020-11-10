@@ -272,22 +272,24 @@ import p4runtime_sh.shell as sh
 
 # you can omit the config argument if the switch is already configured with the
 # correct P4 dataplane.
-sh.setup(
+client = sh.setup(
     device_id=1,
     grpc_addr='localhost:50051',
     election_id=(0, 1), # (high, low)
-    config=sh.FwdPipeConfig('config/p4info.pb.txt', 'config/device_config.bin')
+    config=sh.FwdPipeConfig('config/p4info.pb.txt', 'config/device_config.bin'),
+    # This enables controlling multiple switches
+    set_global_client=False
 )
 
 # see p4runtime_sh/test.py for more examples
-te = sh.TableEntry('<table_name>')(action='<action_name>')
+te = sh.TableEntry('<table_name>', client=client)(action='<action_name>')
 te.match['<name>'] = '<value>'
 te.action['<name>'] = '<value>'
 te.insert()
 
 # ...
 
-sh.teardown()
+sh.teardown(client)
 ```
 
 Note that at the moment the P4Runtime client object is a global variable, which

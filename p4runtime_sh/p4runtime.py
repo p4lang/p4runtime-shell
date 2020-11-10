@@ -26,6 +26,8 @@ import time
 from p4.v1 import p4runtime_pb2
 from p4.v1 import p4runtime_pb2_grpc
 
+from p4runtime_sh.context import Context
+
 
 class P4RuntimeErrorFormatException(Exception):
     def __init__(self, message):
@@ -137,6 +139,7 @@ def parse_p4runtime_error(f):
 
 class P4RuntimeClient:
     def __init__(self, device_id, grpc_addr, election_id):
+        self.context = Context()
         self.device_id = device_id
         self.election_id = election_id
         logging.debug("Connecting to device {} at {}".format(device_id, grpc_addr))

@@ -91,7 +91,9 @@ class BaseTestCase(unittest.TestCase):
         super().setUp()
         self.serve()
 
-    def run_sh(self, args=[]):
+    def run_sh(self, args=None):
+        if args is None:
+            args = []
         new_args = ["p4runtime-sh", "--grpc-addr", self.grpc_addr] + args
         rc = 0
         stdout = None
@@ -290,7 +292,7 @@ action {
         te.insert()
 
         # Cannot use format here because it would require escaping all braces,
-        # which would make wiriting tests much more annoying
+        # which would make writing tests much more annoying
         expected_entry = """
 table_id: 33567650
 match {
