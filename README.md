@@ -274,7 +274,7 @@ import p4runtime_sh.shell as sh
 # correct P4 dataplane.
 sh.setup(
     device_id=1,
-    grpc_addr='localhost:50051',
+    grpc_addr='localhost:9559',
     election_id=(0, 1), # (high, low)
     config=sh.FwdPipeConfig('config/p4info.pb.txt', 'config/device_config.bin')
 )
