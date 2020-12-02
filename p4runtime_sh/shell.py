@@ -2325,7 +2325,7 @@ def get_arg_parser():
     parser.add_argument('--grpc-addr',
                         help='P4Runtime gRPC server address',
                         metavar='<IP>:<port>',
-                        type=str, action='store', default='localhost:50051')
+                        type=str, action='store', default='localhost:9559')
     parser.add_argument('-v', '--verbose', help='Increase output verbosity',
                         action='store_true')
     parser.add_argument('--election-id',
@@ -2340,7 +2340,7 @@ def get_arg_parser():
     return parser
 
 
-def setup(device_id=1, grpc_addr='localhost:50051', election_id=(1, 0), config=None):
+def setup(device_id=1, grpc_addr='localhost:9559', election_id=(1, 0), config=None):
     global client
     logging.debug("Creating P4Runtime client")
     client = P4RuntimeClient(device_id, grpc_addr, election_id)
