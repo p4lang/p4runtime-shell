@@ -1,1 +1,8 @@
-Dockerfile
+*
+!p4runtime_sh/*
+!p4runtime-sh
+!requirements.txt
+!requirements-dev.txt
+!LICENSE
+!config_builders/*
+!docker_entry_point.sh

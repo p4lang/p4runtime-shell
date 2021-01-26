@@ -12,13 +12,15 @@ p4runtime-sh is an interactive Python shell for
 
 We recommend that you download the Docker image (~200MB) and use it, but you can
 also build the image directly with:
+
 ```bash
-git clone --recursive https://github.com/p4lang/p4runtime-shell
+git clone https://github.com/p4lang/p4runtime-shell
 cd p4runtime-shell
 docker build -t p4lang/p4runtime-sh .
 ```
 
 Run the shell as follows:
+
 ```bash
 [sudo] docker run -ti p4lang/p4runtime-sh \
   --grpc-addr <server IP>:<server port> \
@@ -29,17 +31,20 @@ The above command will retrieve the forwarding pipeline configuration from the
 P4Runtime server. You can also push a forwarding pipeline configuration with the
 shell (you will need to mount the directory containing the P4Info and binary
 device config in the docker):
+
 ```bash
 [sudo] docker run -ti -v /tmp/:/tmp/ p4lang/p4runtime-sh \
   --grpc-addr <server IP>:<server port> \
   --device-id 0 --election-id 0,1 --config /tmp/p4info.txt,/tmp/bmv2.json
 ```
+
 The above command assumes that the P4Info (p4info.txt) and the binary device
 config (bmv2.json) are under /tmp/.
 
 To make the process more convenient, we provide a wrapper script, which takes
 care of running the docker (including mounting the P4Info and binary device
 config files in the docker if needed):
+
 ```bash
 [sudo] ./p4runtime-sh-docker --grpc-addr <server IP>:<server port> \
   --device-id 0 --election-id 0,1 \
@@ -73,7 +78,8 @@ P4Runtime `Entity` fields), along with `multicast_group_entry` and
 
 The `Write` command can be used to read a `WriteRequest` message from a file
 (for now, Protobuf text format only) and send it to a server:
-```
+
+```text
 Write <path to file encoding WriteRequest message in text format>
 ```
 

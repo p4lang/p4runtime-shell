@@ -3,3 +3,4 @@ jedi
 ipython
 protobuf
 grpcio
+p4runtime
