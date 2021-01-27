@@ -1,1 +1,12 @@
-Dockerfile
+*
+!p4runtime_sh
+!p4runtime-sh
+!requirements.txt
+!requirements-dev.txt
+!.coveragerc
+.dockerignore
+!.flake8
+!LICENSE
+!config_builders
+!docker_entry_point.sh
+!unittest.cfg
