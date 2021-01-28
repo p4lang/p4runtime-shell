@@ -10,7 +10,9 @@ p4runtime-sh is an interactive Python shell for
 
 ## Using the shell
 
-We recommend that you download the Docker image (~200MB) and use it, but you can
+### Run with Docker
+
+We recommend that you download the Docker image (~142MB) and use it, but you can
 also build the image directly with:
 
 ```bash
@@ -64,6 +66,21 @@ config files in the docker if needed):
  will need to use the IP address assigned to the Docker bridge (`docker0` by
  default) or the IP address assigned to the local network management interface
  (e.g. `eth0`).*
+
+### Run without Docker
+
+You can also install P4Runtime shell via `pip3` and run it directly.
+
+```bash
+# (optional) Set up virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install p4runtime-shell package and run it
+pip3 install p4runtime-shell
+python3 -m p4runtime_sh --grpc-addr <server IP>:<server port> \
+  --device-id 0 --election-id 0,1 --config <p4info.txt>,<pipeline config>
+```
 
 ## Available commands
 
