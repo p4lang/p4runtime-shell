@@ -12,7 +12,7 @@ p4runtime-sh is an interactive Python shell for
 
 ### Run with Docker
 
-We recommend that you download the Docker image (~160MB) and use it, but you can
+We recommend that you download the Docker image (~142MB) and use it, but you can
 also build the image directly with:
 
 ```bash
