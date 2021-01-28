@@ -23,7 +23,7 @@ LABEL maintainer="Antonin Bas <antonin@barefootnetworks.com>"
 LABEL description="A shell based on ipython3 for P4Runtime"
 
 # Any easy way to avoid installing these packages again?
-ENV PKG_DEPS python3 python3-venv
+ENV PKG_DEPS python3
 ENV VENV /p4runtime-sh/venv
 
 RUN apt-get update && \
