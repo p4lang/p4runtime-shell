@@ -16,6 +16,7 @@ RUN python3 -m venv $VENV && \
     pip3 install --upgrade pip && \
     pip3 install --upgrade setuptools && \
     pip3 install -r requirements.txt && \
+    python3 setup.py install \
     rm -rf ~/.cache/pip
 
 FROM ubuntu:20.04
@@ -30,8 +31,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends $PKG_DEPS && \
     rm -rf /var/cache/apt/* /var/lib/apt/lists/*
 
-COPY --from=deps /p4runtime-sh/ /p4runtime-sh/
+COPY --from=deps /p4runtime-sh/venv /p4runtime-sh/venv
 
-WORKDIR /p4runtime-sh/
+WORKDIR /p4runtime-sh
 
 ENTRYPOINT ["/p4runtime-sh/docker_entry_point.sh"]
