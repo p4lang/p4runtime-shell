@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
 source $VENV/bin/activate
-/p4runtime-sh/p4runtime-sh "$@"
+python3 -m p4runtime_sh "$@"

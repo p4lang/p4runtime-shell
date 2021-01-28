@@ -9,7 +9,7 @@ setup(
     packages = find_packages("."),
     install_requires = [
         "ipaddr==2.2.0",
-        "jedi==0.18.0",
+        "jedi==0.17.2",
         "ipython==7.19.0",
         "protobuf==3.14.0",
         "grpcio==1.35.0",
