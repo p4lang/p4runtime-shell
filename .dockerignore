@@ -1,7 +1,6 @@
 *
 !p4runtime_sh
 !p4runtime-sh
-!requirements.txt
 !requirements-dev.txt
 !.coveragerc
 !.flake8

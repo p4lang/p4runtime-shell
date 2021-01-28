@@ -22,7 +22,7 @@ setup(
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
     ],
-    description = "The P4 Runtime shell",
+    description = "The P4Runtime shell",
     long_description = open(project_root + "/README.md").read(),
     long_description_content_type = "text/markdown",
     license = "Apache-2.0",
