@@ -150,7 +150,13 @@ class P4RuntimeClient:
 
     def set_up_stream(self):
         self.stream_out_q = queue.Queue()
-        self.stream_in_q = queue.Queue()
+        # queues for different messages
+        self.stream_in_q = {
+            "arbitration": queue.Queue(),
+            "packet": queue.Queue(),
+            "digest": queue.Queue(),
+            "unknown": queue.Queue(),
+        }
 
         def stream_req_iterator():
             while True:
@@ -163,13 +169,23 @@ class P4RuntimeClient:
             @parse_p4runtime_error
             def stream_recv():
                 for p in stream:
-                    self.stream_in_q.put(p)
+                    if p.HasField("arbitration"):
+                        self.stream_in_q["arbitration"].put(p)
+                    elif p.HasField("packet"):
+                        self.stream_in_q["packet"].put(p)
+                    elif p.HasField("digest"):
+                        self.stream_in_q["digest"].put(p)
+                    else:
+                        self.stream_in_q["unknown"].put(p)
             try:
                 stream_recv()
             except P4RuntimeException as e:
                 logging.critical("StreamChannel error, closing stream")
                 logging.critical(e)
-                self.stream_in_q.put(None)
+                self.stream_in_q["arbitration"].put(None)
+                self.stream_in_q["packet"].put(None)
+                self.stream_in_q["digest"].put(None)
+                self.stream_in_q["unknown"].put(None)
 
         self.stream = self.stub.StreamChannel(stream_req_iterator())
         self.stream_recv_thread = threading.Thread(
@@ -198,17 +214,18 @@ class P4RuntimeClient:
             print("You are not master, you only have read access to the server")
 
     def get_stream_packet(self, type_, timeout=1):
+        if type_ not in self.stream_in_q:
+            print("Unknown stream type '{}'".format(type_))
+            return None
         start = time.time()
         try:
             while True:
                 remaining = timeout - (time.time() - start)
                 if remaining < 0:
                     break
-                msg = self.stream_in_q.get(timeout=remaining)
+                msg = self.stream_in_q[type_].get(timeout=remaining)
                 if msg is None:
                     return None
-                if not msg.HasField(type_):
-                    continue
                 return msg
         except queue.Empty:  # timeout expired
             pass

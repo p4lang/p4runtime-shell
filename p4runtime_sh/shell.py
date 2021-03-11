@@ -26,7 +26,7 @@ from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
-from .context import P4RuntimeEntity, P4Type, Context
+from .context import P4RuntimeEntity, P4Type, Context, P4RuntimeStreamMessage
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
 from google.protobuf import descriptor
@@ -602,6 +602,7 @@ class _EntityBase:
         self._entity_type = entity_type
         self._entry = p4runtime_cls()
         self._modify_only = modify_only
+        self._p4runtime_cls = p4runtime_cls
 
     def __dir__(self):
         d = ["msg", "read"]
@@ -2263,6 +2264,101 @@ Access truncation length with <self>.packet_length_bytes.
         return self
 
 
+class PacketMetadata:
+    def __init__(self, metadata_info_list):
+        self._md_info = OrderedDict()
+        self._md = OrderedDict()
+        # Initialize every metadata to zero value
+        for md in metadata_info_list:
+            self._md_info[md.name] = md
+            self._md[md.name] = self._parse_md('0', md)
+        self._set_docstring()
+
+    def _set_docstring(self):
+        self.__doc__ = "Available metadata:\n\n"
+        for name, info in self._md_info.items():
+            self.__doc__ += str(info)
+        self.__doc__ += """
+Set a metadata value with <self>['<metadata_name>'] = '...'
+
+You may also use <self>.set(<md_name>='<value>')
+"""
+
+    def __dir__(self):
+        return ["clear"]
+
+    def _get_md_info(self, name):
+        if name in self._md_info:
+            return self._md_info[name]
+        raise UserError("'{}' is not a valid metadata name".format(name))
+
+    def __getitem__(self, name):
+        _ = self._get_md_info(name)
+        print(self._md.get(name, "Unset"))
+
+    def _parse_md(self, value, md_info):
+        if type(value) is not str:
+            raise UserError("Metadata value must be a string")
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = md_info.id
+        md.value = bytes_utils.parse_value(value.strip(), md_info.bitwidth)
+        return md
+
+    def __setitem__(self, name, value):
+        md_info = self._get_md_info(name)
+        self._md[name] = self._parse_md(value, md_info)
+
+    def _ipython_key_completions_(self):
+        return self._md_info.keys()
+
+    def set(self, **kwargs):
+        for name, value in kwargs.items():
+            self[name] = value
+
+    def clear(self):
+        self._md.clear()
+
+class PacketIO(_P4EntityBase):
+    def __init__(self, name):
+        if name == "packet_in":
+            super().__init__(P4Type.controller_packet_metadata, P4RuntimeStreamMessage.packet, p4runtime_pb2.PacketIn, name)
+        elif name == "packet_out":
+            super().__init__(P4Type.controller_packet_metadata, P4RuntimeStreamMessage.packet, p4runtime_pb2.PacketOut, name)
+        else:
+            raise UserError("Invalid controller packet metadata type '{}'".format(name))
+        self.name = name
+        self.payload = b''
+        self.metadata = PacketMetadata(self._info.metadata)
+
+    def _update_msg(self):
+        self._entry = self._p4runtime_cls()
+        self._entry.payload = self.payload
+        self._entry.metadata.extend(self.metadata._md.values())
+
+    def __setattr__(self, name, value):
+        if name == "payload" and type(value) is not bytes:
+            raise UserError("payload must be a bytes type")
+        if name == "metadata" and type(value) is not PacketMetadata:
+            raise UserError("metadata must be a PacketMetadata type")
+        return super().__setattr__(name, value)
+
+    def __dir__(self):
+        if self.name == "packet_in":
+            return ["metadata", "receive"]
+        else:
+            return ["metadata", "send"]
+
+    def receive(self, timeout=1):
+        return client.get_stream_packet("packet", timeout)
+
+    def send(self):
+        self._update_msg()
+        self._validate_msg()
+        msg = p4runtime_pb2.StreamMessageRequest()
+        msg.packet.CopyFrom(self._entry)
+        client.stream_out_q.put(msg)
+
+
 def Write(input_):
     """
     Reads a WriteRequest from a file (text format) and sends it to the server.
@@ -2439,6 +2535,12 @@ def main():
 
     user_ns["multicast_group_entry"] = MulticastGroupEntry
     user_ns["clone_session_entry"] = CloneSessionEntry
+
+    supported_stream_messages = [
+        (P4RuntimeStreamMessage.packet, P4Type.controller_packet_metadata, PacketIO),
+    ]
+    for entity, p4type, cls in supported_stream_messages:
+        user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
