@@ -2318,12 +2318,17 @@ You may also use <self>.set(<md_name>='<value>')
     def clear(self):
         self._md.clear()
 
+
 class PacketIO(_P4EntityBase):
     def __init__(self, name):
         if name == "packet_in":
-            super().__init__(P4Type.controller_packet_metadata, P4RuntimeStreamMessage.packet, p4runtime_pb2.PacketIn, name)
+            super().__init__(P4Type.controller_packet_metadata,
+                             P4RuntimeStreamMessage.packet,
+                             p4runtime_pb2.PacketIn, name)
         elif name == "packet_out":
-            super().__init__(P4Type.controller_packet_metadata, P4RuntimeStreamMessage.packet, p4runtime_pb2.PacketOut, name)
+            super().__init__(P4Type.controller_packet_metadata,
+                             P4RuntimeStreamMessage.packet,
+                             p4runtime_pb2.PacketOut, name)
         else:
             raise UserError("Invalid controller packet metadata type '{}'".format(name))
         self.name = name

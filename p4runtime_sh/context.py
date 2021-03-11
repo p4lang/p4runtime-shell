@@ -60,6 +60,7 @@ class P4RuntimeEntity(enum.Enum):
 class P4RuntimeStreamMessage(enum.Enum):
     packet = 1
 
+
 class Context:
     def __init__(self):
         self.p4info = None
