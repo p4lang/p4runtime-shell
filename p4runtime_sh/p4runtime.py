@@ -182,16 +182,12 @@ class P4RuntimeClient:
             except P4RuntimeException as e:
                 logging.critical("StreamChannel error, closing stream")
                 logging.critical(e)
-                self.stream_in_q["arbitration"].put(None)
-                self.stream_in_q["packet"].put(None)
-                self.stream_in_q["digest"].put(None)
-                self.stream_in_q["unknown"].put(None)
-
+                for k in self.stream_in_q:
+                    self.stream_in_q[k].put(None)
         self.stream = self.stub.StreamChannel(stream_req_iterator())
         self.stream_recv_thread = threading.Thread(
             target=stream_recv_wrapper, args=(self.stream,))
         self.stream_recv_thread.start()
-
         self.handshake()
 
     def handshake(self):
@@ -217,19 +213,11 @@ class P4RuntimeClient:
         if type_ not in self.stream_in_q:
             print("Unknown stream type '{}'".format(type_))
             return None
-        start = time.time()
         try:
-            while True:
-                remaining = timeout - (time.time() - start)
-                if remaining < 0:
-                    break
-                msg = self.stream_in_q[type_].get(timeout=remaining)
-                if msg is None:
-                    return None
-                return msg
+            msg = self.stream_in_q[type_].get(timeout=timeout)
+            return msg
         except queue.Empty:  # timeout expired
-            pass
-        return None
+            return None
 
     @parse_p4runtime_error
     def get_p4info(self):
@@ -263,6 +251,10 @@ class P4RuntimeClient:
         if self.stream_out_q:
             logging.debug("Cleaning up stream")
             self.stream_out_q.put(None)
+        if self.stream_in_q:
+            for k in self.stream_in_q:
+                self.stream_in_q[k].put(None)
+        if self.stream_recv_thread:
             self.stream_recv_thread.join()
         self.channel.close()
         del self.channel  # avoid a race condition if channel deleted when process terminates

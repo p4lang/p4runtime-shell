@@ -31,6 +31,7 @@ from p4runtime_sh.context import P4Type, P4RuntimeEntity
 from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
+from threading import Thread
 
 # ensures that IPython uses a "simple prompt"
 # see run_sh() in BaseTestCase for more details
@@ -41,7 +42,7 @@ import p4runtime_sh.shell as sh  # noqa: E402
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
     def __init__(self):
         self.p4info = p4info_pb2.P4Info()
-        self.p4runtime_api_version = "1.2.0-dev"
+        self.p4runtime_api_version = "1.3.0"
 
     def GetForwardingPipelineConfig(self, request, context):
         rep = p4runtime_pb2.GetForwardingPipelineConfigResponse()
@@ -956,6 +957,40 @@ clone_session_entry {
         version = sh.APIVersion()
         self.assertEqual(version, self.servicer.p4runtime_api_version)
 
+    def test_packet_in_sniff(self):
+        # In this tests we will send a packet-in message from the servicer and check if
+        # packet_in.sniff method works
+        msg = p4runtime_pb2.StreamMessageResponse()
+        msg.packet.payload = b'Random packet-in payload'
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = 1
+        md.value = b'\x00\x01'
+        msg.packet.metadata.append(md)
+
+        # Have to sniff the packet in another thread since this blocks the thread
+        packet_in = sh.PacketIn()
+        captured_packet = []
+
+        def _sniff_packet(captured_packet):
+            captured_packet += packet_in.sniff(timeout=1, count=1, verbose=True)
+        _t = Thread(target=_sniff_packet, args=(captured_packet, ))
+        _t.start()
+
+        # TODO: modify the servicer to send stream message?
+        sh.client.stream_in_q["packet"].put(msg)
+        _t.join()
+
+        self.assertEqual(len(captured_packet), 1)
+        self.assertEqual(captured_packet[0],  msg)
+
+    def test_packet_in_handle(self):
+        pass
+
+    def test_packet_in_handle_with_filter(self):
+        pass
+
+    def test_packet_out(self):
+        pass
 
 class P4RuntimeClientTestCase(BaseTestCase):
     def setUp(self):

@@ -133,6 +133,15 @@ class Context:
     def get_obj_by_id(self, id_):
         return self.p4info_obj_map_by_id[id_]
 
+    def get_packet_metadata_name_from_id(self, ctrl_pkt_md_name, id_):
+        ctrl_pkt_md = self.get_obj(P4Type.controller_packet_metadata, ctrl_pkt_md_name)
+        if not ctrl_pkt_md:
+            return None
+        for md in ctrl_pkt_md.metadata:
+            if md.id == id_:
+                return md.name
+        return None
+
     # In order to make the CLI easier to use, we accept any suffix that
     # uniquely identifies the object among p4info objects of the same type.
     def _import_p4info_names(self):

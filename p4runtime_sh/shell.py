@@ -17,10 +17,12 @@ import argparse
 from collections import Counter, namedtuple, OrderedDict
 import enum
 import logging
+from threading import Thread, Event
 from IPython import start_ipython
 from traitlets.config.loader import Config
 from IPython.terminal.prompts import Prompts, Token
 import os.path
+import re
 import sys
 from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4runtime_error
 from p4.v1 import p4runtime_pb2
@@ -75,6 +77,13 @@ class _PrintContext:
                     return None
         return None
 
+    def find_controller_packet_metadata(self):
+        for msg in reversed(self.stack):
+            if msg.DESCRIPTOR.name == "PacketIn":
+                return "packet_in"
+            if msg.DESCRIPTOR.name == "PacketOut":
+                return "packet_out"
+        return None
 
 def _sub_object(field, value, pcontext):
     id_ = value
@@ -100,6 +109,12 @@ def _sub_ap(field, value, pcontext):
         logging.error("Cannot find any action in context")
         return
     return context.get_param_name(action_name, id_)
+
+
+def _sub_pkt_md(field, value, pcontext):
+    id_ = value
+    ctrl_pkt_md_name = pcontext.find_controller_packet_metadata()
+    return context.get_packet_metadata_name_from_id(ctrl_pkt_md_name, id_)
 
 
 def _gen_pretty_print_proto_field(substitutions, pcontext):
@@ -186,6 +201,7 @@ def _repr_pretty_p4runtime(msg):
         "DigestEntry": {"digest_id": _sub_object},
         "DigestListAck": {"digest_id": _sub_object},
         "DigestList": {"digest_id": _sub_object},
+        "PacketMetadata": {"metadata_id": _sub_pkt_md}
     }
     return _repr_pretty_proto(msg, substitutions)
 
@@ -2318,27 +2334,115 @@ You may also use <self>.set(<md_name>='<value>')
     def clear(self):
         self._md.clear()
 
+    def values(self):
+        return self._md.values()
 
-class PacketIO(_P4EntityBase):
-    def __init__(self, name):
-        if name == "packet_in":
-            super().__init__(P4Type.controller_packet_metadata,
-                             P4RuntimeStreamMessage.packet,
-                             p4runtime_pb2.PacketIn, name)
-        elif name == "packet_out":
-            super().__init__(P4Type.controller_packet_metadata,
-                             P4RuntimeStreamMessage.packet,
-                             p4runtime_pb2.PacketOut, name)
-        else:
-            raise UserError("Invalid controller packet metadata type '{}'".format(name))
-        self.name = name
-        self.payload = b''
-        self.metadata = PacketMetadata(self._info.metadata)
+
+latest_hid = 0
+packet_in_handles = {}  # Handle ID -> handle function
+class PacketIn():
+
+    def __init__(self):
+        ctrl_pkt_md = P4Objects(P4Type.controller_packet_metadata)
+        self.md_info_list = {}
+        if "packet_in" in ctrl_pkt_md:
+            self.p4_info = ctrl_pkt_md["packet_in"]
+            for md_info in self.p4_info.metadata:
+                self.md_info_list[md_info.name] = md_info
+        def _packet_in_recv_func(pkt_in):
+            global packet_in_handles
+            while True:
+                msg = client.get_stream_packet("packet", timeout=None)
+                if not msg:
+                    break
+
+                for _, handle in packet_in_handles.items():
+                    try:
+                        handle(msg.packet)
+                    except Exception as e:
+                        print(e)
+
+        self.recv_t = Thread(target=_packet_in_recv_func, args=(self, ))
+        self.recv_t.start()
+
+    def register_handler(self, handle, payload_regex=b'', **kwargs):
+        # Register a packet-in handle, will return the handle ID.
+        # Use keyword argument as additional filter to filter the packet in
+        # For example:
+        # register_handler(my_handle, payload_regex=b'.*\x02', egress_port='1')
+        global latest_hid
+        global packet_in_handles
+        filters = {}  # metadata id -> filter
+        if not handle or '__call__' not in dir(handle):
+            raise UserError("handle is not a callable object")
+
+        for key, value in kwargs.items():
+            if key not in self.md_info_list:
+                raise UserError("'{}' is not a packet-in metadata".format(key))
+            md_info = self.md_info_list[key]
+            filters[md_info.id] = bytes_utils.parse_value(value.strip(),
+                                                          md_info.bitwidth)
+
+        def _handle_wraper(packet_in_msg):
+            for md in packet_in_msg.metadata:
+                if md.metadata_id in filters:
+                    if md.value != filters[md.metadata_id]:
+                        return
+            if not re.search(payload_regex, packet_in_msg.payload):
+                return
+            handle(packet_in_msg)
+
+        latest_hid += 1
+        hid = latest_hid
+        packet_in_handles[hid] = _handle_wraper
+        return hid
+
+    def deregister_handler(self, hid):
+        global packet_in_handles
+        if hid not in packet_in_handles:
+            raise UserError("Handle with ID '{}' does not exists".format(hid))
+        return packet_in_handles.pop(hid)
+
+    def sniff(self, timeout=1, count=1, to_file=None, verbose=False):
+        """
+        Returns number of packet-in messages received within timeout time.
+        """
+        result = []
+        _sniff_done = Event()
+        def _sniff_handle(packet_in_msg):
+            result.append(packet_in_msg)
+            if to_file:
+                with open(to_file, "a") as f:
+                    f.write(str(packet_in_msg))
+            if verbose:
+                print(packet_in_msg)
+            if count and len(result) >= count:
+                _sniff_done.set()
+        hid = self.register_handler(_sniff_handle)
+        try:
+            _sniff_done.wait(timeout)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.deregister_handler(hid)
+
+        return result
+
+
+class PacketOut:
+    def __init__(self, payload=b'', **kwargs):
+
+        self.p4_info = P4Objects(P4Type.controller_packet_metadata)["packet_out"]
+        self.payload = payload
+        self.metadata = PacketMetadata(self.p4_info.metadata)
+        if kwargs:
+            for key, value in kwargs.items():
+                self.metadata[key] = value
 
     def _update_msg(self):
-        self._entry = self._p4runtime_cls()
+        self._entry = p4runtime_pb2.PacketOut()
         self._entry.payload = self.payload
-        self._entry.metadata.extend(self.metadata._md.values())
+        self._entry.metadata.extend(self.metadata.values())
 
     def __setattr__(self, name, value):
         if name == "payload" and type(value) is not bytes:
@@ -2348,17 +2452,18 @@ class PacketIO(_P4EntityBase):
         return super().__setattr__(name, value)
 
     def __dir__(self):
-        if self.name == "packet_in":
-            return ["metadata", "receive"]
-        else:
-            return ["metadata", "send"]
+        return ["metadata", "send", "payload"]
 
-    def receive(self, timeout=1):
-        return client.get_stream_packet("packet", timeout)
+    def __str__(self):
+        self._update_msg()
+        return str(_repr_pretty_p4runtime(self._entry))
+
+    def _repr_pretty_(self, p, cycle):
+        self._update_msg()
+        p.text(_repr_pretty_p4runtime(self._entry))
 
     def send(self):
         self._update_msg()
-        self._validate_msg()
         msg = p4runtime_pb2.StreamMessageRequest()
         msg.packet.CopyFrom(self._entry)
         client.stream_out_q.put(msg)
@@ -2540,12 +2645,8 @@ def main():
 
     user_ns["multicast_group_entry"] = MulticastGroupEntry
     user_ns["clone_session_entry"] = CloneSessionEntry
-
-    supported_stream_messages = [
-        (P4RuntimeStreamMessage.packet, P4Type.controller_packet_metadata, PacketIO),
-    ]
-    for entity, p4type, cls in supported_stream_messages:
-        user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)
+    user_ns["packet_in"] = PacketIn()  # Singleton packet_in object to handle all packet-in cases
+    user_ns["packet_out"] = PacketOut
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
