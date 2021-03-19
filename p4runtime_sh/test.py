@@ -507,6 +507,25 @@ action {
         with self.assertRaisesRegex(UserError, "does not support direct actions"):
             te = sh.TableEntry("IndirectWS")(action="actionA")
 
+    def test_table_metadata(self):
+        te = sh.TableEntry("ExactOne")(action="actionA")
+        te.metadata = b"abcdef\x00\xff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33582705
+action {
+  action {
+    action_id: 16783703
+  }
+}
+metadata: "abcdef\\x00\\xff"
+"""
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_table_indirect_oneshot(self):
         te = sh.TableEntry("IndirectWS")
         te.match["header_test.field32"] = "10.0.0.0"
