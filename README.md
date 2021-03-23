@@ -103,6 +103,32 @@ Write <path to file encoding WriteRequest message in text format>
 Type the command name followed by `?` for information on each command,
 e.g. `table_entry?`.
 
+## Canonical representation of bytestrings
+
+The [P4Runtime
+specification](https://p4.org/p4runtime/spec/v1.3.0/P4Runtime-Spec.html#sec-bytestrings)
+defines a canonical representation for binary strings, which all P4Runtime
+servers must support. This representation can be used to format all binary
+strings (match fields, action parameters, ...) in P4Runtime messages exchanged
+between the client and the server. For legacy reasons, some P4Runtime servers do
+not support the canonical representation and require binary strings to be
+byte-padded according to the bitwidth specified in the P4Info message. While all
+P4Runtime-conformant servers must also accept this legacy format, it can lead to
+read-write asymmetry for P4Runtime entities. For example a client may insert a
+TableEntry using the legacy format for match fields, but when reading the same
+TableEntry back, the server may return a message with match field values in the
+canonical representation. When a client uses the canonical representation,
+read-write symmetry is always guaranteed.
+
+If you are dealing with a legacy server which rejects binary strings formatted
+using the canonical representation (making this server non conformant to the
+specification), you can revert to the byte-padded format by typing the following
+command in the shell:
+
+```python
+P4Runtime sh >>> SetGlobalOption "canonical_bytestrings",False
+```
+
 ## Example usage
 
 Here is some of what you can do when using p4runtime-sh with ONF's
