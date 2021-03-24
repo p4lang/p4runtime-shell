@@ -992,7 +992,7 @@ class P4RuntimeClientTestCase(BaseTestCase):
         self.servicer.StreamChannel = Mock(spec=[])
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
-    def test_arbitration_slave(self):
+    def test_arbitration_backup(self):
         def StreamChannelMock(request_iterator, context):
             for req in request_iterator:
                 if req.HasField('arbitration'):
@@ -1004,6 +1004,6 @@ class P4RuntimeClientTestCase(BaseTestCase):
 
         with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
             client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
-            self.assertIn("You are not master", mock_stdout.getvalue())
+            self.assertIn("You are not the primary client", mock_stdout.getvalue())
             self.servicer.StreamChannel.assert_called_once_with(ANY, ANY)
             client.tear_down()
