@@ -14,7 +14,7 @@
 #
 
 from ipaddr import IPv4Address, IPv6Address, AddressValueError
-from . global_options import Options, options_map
+from . global_options import global_options, Options
 from .utils import UserError
 
 
@@ -99,7 +99,7 @@ def to_canonical_bytes(bytes_):
 
 
 def make_canonical_if_option_set(bytes_):
-    if options_map.get_value(Options.canonical_bytestrings):
+    if global_options.get_option(Options.canonical_bytestrings):
         return to_canonical_bytes(bytes_)
     return bytes_
 

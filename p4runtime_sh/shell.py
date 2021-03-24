@@ -26,7 +26,7 @@ from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
-from . global_options import Options, options_map
+from . global_options import global_options
 from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
@@ -2296,75 +2296,6 @@ def APIVersion():
     return client.api_version()
 
 
-class UnknownOptionName(UserError):
-    def __init__(self, option_name):
-        self.option_name = option_name
-
-    def __str__(self):
-        return "Unknown option name: {}".format(self.option_name)
-
-
-class InvalidOptionValueType(UserError):
-    def __init__(self, option, value):
-        self.option = option
-        self.value = value
-
-    def __str__(self):
-        return "Invalid value type for option {}: expected {} but got value {} with type {}".format(
-            self.option.name, self.option.value.__name__, self.value, type(self.value).__name__)
-
-
-def supported_options_as_str():
-    options = options_map.get_all_values()
-    return ", ".join(["{} ({})".format(option.name, option.value.__name__) for option in options])
-
-
-def SetGlobalOption(name, value):
-    try:
-        option = Options[name]
-    except KeyError:
-        raise UnknownOptionName(name)
-    if type(value) != option.value:
-        raise InvalidOptionValueType(option, value)
-    options_map.set_value(option, value)
-
-
-SetGlobalOption.__doc__ = """
-Set value of specified global option.
-Supported global options are: {}
-For example, to ask the shell to send all bytestrings using a byte-padded representation,
-instead of the canonical form (default), use:
-SetGlobalOption "canonical_bytestrings",False
-""".format(supported_options_as_str())
-
-
-def GetGlobalOption(name):
-    try:
-        option = Options[name]
-    except KeyError:
-        raise UnknownOptionName(name)
-    return options_map.get_value(option)
-
-
-GetGlobalOption.__doc__ = """
-Get value of specified global option.
-Supported global options are: {}
-For example, to check if the shell will send all bytestrings in a canonical form, use:
-GetGlobalOption "canonical_bytestrings"
-""".format(supported_options_as_str())
-
-
-def GetGlobalOptions():
-    """
-    Get all available global options, along with their current value, as a dictionary.
-    """
-    values = options_map.get_all_values()
-    values2 = {}
-    for option, value in values.items():
-        values2[option.name] = value
-    return values2
-
-
 # see https://ipython.readthedocs.io/en/stable/config/details.html
 class MyPrompt(Prompts):
     def in_prompt_tokens(self, cli=None):
@@ -2498,9 +2429,7 @@ def main():
         "MulticastGroupEntry": MulticastGroupEntry,
         "CloneSessionEntry": CloneSessionEntry,
         "APIVersion": APIVersion,
-        "SetGlobalOption": SetGlobalOption,
-        "GetGlobalOption": GetGlobalOption,
-        "GetGlobalOptions": GetGlobalOptions,
+        "global_options": global_options,
     }
 
     for obj_type in P4Type:

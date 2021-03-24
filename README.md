@@ -126,7 +126,7 @@ specification), you can revert to the byte-padded format by typing the following
 command in the shell:
 
 ```python
-P4Runtime sh >>> SetGlobalOption "canonical_bytestrings",False
+P4Runtime sh >>> global_options["canonical_bytestrings"] = False
 ```
 
 ## Example usage

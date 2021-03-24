@@ -14,6 +14,7 @@
 #
 
 import enum
+from .utils import UserError
 
 
 @enum.unique
@@ -21,31 +22,117 @@ class Options(enum.Enum):
     canonical_bytestrings = bool
 
 
-class OptionMap:
+class UnknownOptionName(UserError):
+    def __init__(self, option_name):
+        self.option_name = option_name
+
+    def __str__(self):
+        return "Unknown option name: {}".format(self.option_name)
+
+
+class InvalidOptionValueType(UserError):
+    def __init__(self, option, value):
+        self.option = option
+        self.value = value
+
+    def __str__(self):
+        return "Invalid value type for option {}: expected {} but got value {} with type {}".format(
+            self.option.name, self.option.value.__name__, self.value, type(self.value).__name__)
+
+
+class GlobalOptions:
     option_defaults = {
         Options.canonical_bytestrings: True,
     }
 
+    option_helpstrings = {
+        Options.canonical_bytestrings: """
+Use byte-padded legacy format for binary strings sent to the P4Runtime server,
+instead of the canonical representation. See P4Runtime specification for details.
+"""
+    }
+
     def __init__(self):
-        self.values = {}
-        self.reset_values()
+        self._values = {}
+        self.reset()
+        self._option_names = [option.name for option in Options]
+        self._set_docstring()
 
-    def reset_values(self):
+    def reset(self):
+        """Reset all options to their defaults."""
         for option in Options:
-            assert(option in OptionMap.option_defaults)
-            self.values[option] = OptionMap.option_defaults[option]
+            assert(option in GlobalOptions.option_defaults)
+            self._values[option] = GlobalOptions.option_defaults[option]
 
-    def get_value(self, option):
-        assert(option in self.values)
-        return self.values[option]
+    def _supported_options_as_str(self):
+        return ", ".join(["{} ({})".format(o.name, o.value.__name__) for o in Options])
 
-    def get_all_values(self):
-        return self.values
+    def _supported_options_as_str_verbose(self):
+        s = ""
+        for option in Options:
+            s += "Option name: {}\n".format(option.name)
+            s += "Type: {}\n".format(option.value.__name__)
+            s += "Default value: {}\n".format(GlobalOptions.option_defaults[option])
+            s += "Description: {}\n".format(GlobalOptions.option_helpstrings.get(option, "N/A"))
+            s += "\n"
+        return s[:-1]
 
-    def set_value(self, option, value):
-        assert(option in self.values)
-        assert(type(value) == option.value)
-        self.values[option] = value
+    def _set_docstring(self):
+        self.__doc__ = """
+Manage global options for the P4Runtime shell.
+Supported options are: {}
+To set the value of a global option, use global_options["<option name>"] = <option value>
+To access the current value of a global option, use global_options.["<option name>"]
+To reset all options to their default value, use global_options.reset
+
+{}
+""".format(self._supported_options_as_str(), self._supported_options_as_str_verbose())
+
+    def __dir__(self):
+        return ["reset", "set", "get"]
+
+    def _ipython_key_completions_(self):
+        return self._option_names
+
+    # Should be used by shell code, not user
+    def set_option(self, option, value):
+        self._values[option] = value
+
+    # Should be used by shell code, not user
+    def get_option(self, option):
+        return self._values[option]
+
+    def set(self, name, value):
+        """Set the value of specified option."""
+        try:
+            option = Options[name]
+        except KeyError:
+            raise UnknownOptionName(name)
+        if type(value) != option.value:
+            raise InvalidOptionValueType(option, value)
+        self.set_option(option, value)
+
+    def get(self, name):
+        """Get the value of specified option."""
+        try:
+            option = Options[name]
+        except KeyError:
+            raise UnknownOptionName(name)
+        return self.get_option(option)
+
+    def __setitem__(self, name, value):
+        self.set(name, value)
+
+    def __getitem__(self, name):
+        return self.get(name)
+
+    def __str__(self):
+        return '\n'.join(["{}: {}".format(o.name, v) for o, v in self._values.items()])
+
+    def _repr_pretty_(self, p, cycle):
+        for option, value in self._values.items():
+            p.text("{}: {}".format(option.name, value))
+            p.breakable("\n")
 
 
-options_map = OptionMap()
+global_options = GlobalOptions()

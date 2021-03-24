@@ -28,7 +28,7 @@ from unittest.mock import ANY, Mock, patch
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 from p4runtime_sh.context import P4Type, P4RuntimeEntity
-from p4runtime_sh.global_options import options_map
+from p4runtime_sh.global_options import global_options
 from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
@@ -157,7 +157,7 @@ class UnitTestCase(BaseTestCase):
         self.servicer.Read = Mock(spec=[], return_value=p4runtime_pb2.ReadResponse())
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
-        options_map.reset_values()
+        global_options.reset()
 
         sh.setup(device_id=self.device_id,
                  grpc_addr=self.grpc_addr,
@@ -313,7 +313,7 @@ action {
             p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
         self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
-        sh.SetGlobalOption("canonical_bytestrings", False)  # enable legacy (byte-padded) format
+        sh.global_options["canonical_bytestrings"] = False  # enable legacy (byte-padded) format
 
         expected_entry = """
 table_id: 33582705
@@ -1035,17 +1035,20 @@ clone_session_entry {
 
     def test_global_options(self):
         option_name = "canonical_bytestrings"
-        options = sh.GetGlobalOptions()
+        options = sh.global_options
         self.assertEqual(options[option_name], True)
-        sh.SetGlobalOption(option_name, False)
-        value = sh.GetGlobalOption(option_name)
-        self.assertEqual(value, False)
+        options[option_name] = False
+        self.assertEqual(options.get(option_name), False)
+        options.reset()
+        self.assertEqual(options.get(option_name), True)
+        options.set(option_name, False)
+        self.assertEqual(options[option_name], False)
 
     def test_global_options_invalid(self):
         with self.assertRaisesRegex(UserError, "Unknown option name"):
-            sh.GetGlobalOption("foo")
+            sh.global_options["foo"]
         with self.assertRaisesRegex(UserError, "Invalid value type"):
-            sh.SetGlobalOption("canonical_bytestrings", "bar")
+            sh.global_options["canonical_bytestrings"] = "bar"
 
 
 class P4RuntimeClientTestCase(BaseTestCase):
