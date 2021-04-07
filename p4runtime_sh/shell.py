@@ -26,6 +26,7 @@ from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
+from . global_options import global_options
 from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
@@ -353,9 +354,12 @@ You may also use <self>.set(<f>='<value>')
 
     def _parse_mf_exact(self, s, field_info):
         v = bytes_utils.parse_value(s.strip(), field_info.bitwidth)
+        return self._sanitize_and_convert_mf_exact(v, field_info)
+
+    def _sanitize_and_convert_mf_exact(self, value, field_info):
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.exact.value = v
+        mf.exact.value = bytes_utils.make_canonical_if_option_set(value)
         return mf
 
     def _parse_mf_lpm(self, s, field_info):
@@ -374,7 +378,6 @@ You may also use <self>.set(<f>='<value>')
 
         return self._sanitize_and_convert_mf_lpm(prefix, length, field_info)
 
-    # TODO(antonin): use canonical representation when server supports it
     def _sanitize_and_convert_mf_lpm(self, prefix, length, field_info):
         if length == 0:
             raise UserError(
@@ -404,7 +407,7 @@ You may also use <self>.set(<f>='<value>')
         if transformed:
             print("LPM value was transformed to conform to the P4Runtime spec "
                   "(trailing bits must be unset)")
-        mf.lpm.value = bytes(barray)
+        mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         return mf
 
     def _parse_mf_ternary(self, s, field_info):
@@ -420,14 +423,12 @@ You may also use <self>.set(<f>='<value>')
 
         return self._sanitize_and_convert_mf_ternary(value, mask, field_info)
 
-    # TODO(antonin): use canonical representation when server supports it
     def _sanitize_and_convert_mf_ternary(self, value, mask, field_info):
         if int.from_bytes(mask, byteorder='big') == 0:
             raise UserError("Ignoring ternary don't care match (mask of 0s) as per P4Runtime spec")
 
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.ternary.mask = mask
 
         barray = bytearray(value)
         transformed = False
@@ -438,10 +439,10 @@ You may also use <self>.set(<f>='<value>')
         if transformed:
             print("Ternary value was transformed to conform to the P4Runtime spec "
                   "(masked off bits must be unset)")
-        mf.ternary.value = bytes(barray)
+        mf.ternary.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
+        mf.ternary.mask = bytes_utils.make_canonical_if_option_set(mask)
         return mf
 
-    # TODO(antonin): use canonical representation when server supports it
     def _parse_mf_range(self, s, field_info):
         try:
             start, end = s.split('..')
@@ -467,8 +468,8 @@ You may also use <self>.set(<f>='<value>')
                 "Ignoring range don't care match (all possible values) as per P4Runtime spec")
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.range.low = start
-        mf.range.high = end
+        mf.range.low = bytes_utils.make_canonical_if_option_set(start)
+        mf.range.high = bytes_utils.make_canonical_if_option_set(end)
         return mf
 
     def _add_field(self, field_info):
@@ -569,7 +570,7 @@ class Action:
         v = bytes_utils.parse_value(s, param_info.bitwidth)
         p = p4runtime_pb2.Action.Param()
         p.param_id = param_info.id
-        p.value = v
+        p.value = bytes_utils.make_canonical_if_option_set(v)
         return p
 
     def msg(self):
@@ -2428,6 +2429,7 @@ def main():
         "MulticastGroupEntry": MulticastGroupEntry,
         "CloneSessionEntry": CloneSessionEntry,
         "APIVersion": APIVersion,
+        "global_options": global_options,
     }
 
     for obj_type in P4Type:
