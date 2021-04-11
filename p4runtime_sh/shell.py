@@ -1865,7 +1865,7 @@ class _MeterEntryBase(_P4EntityBase):
 
     def __getattr__(self, name):
         if name in _MeterConfig.attrs():
-            self._config, r = _MeterConfig.get_count(
+            self._config, r = _MeterConfig.get_param(
                 self._config, self.name, self._meter_type, name)
             return r
         if name == "config":
