@@ -85,6 +85,10 @@ def macAddr_to_bytes(addr):
     return bytes(bytes_)
 
 
+def str_to_bytes(value_str):
+    return bytes(value_str, 'utf-8')
+
+
 def to_canonical_bytes(bytes_):
     if len(bytes_) == 0:
         return bytes_
@@ -105,6 +109,8 @@ def make_canonical_if_option_set(bytes_):
 
 
 def parse_value(value_str, bitwidth, base=0):
+    if bitwidth == 0:
+        return str_to_bytes(value_str)
     if bitwidth == 32 and '.' in value_str:
         return ipv4Addr_to_bytes(value_str)
     elif bitwidth == 48 and ':' in value_str:
