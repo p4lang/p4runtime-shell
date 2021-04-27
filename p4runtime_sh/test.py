@@ -417,6 +417,36 @@ action {
         with self.assertRaisesRegex(UserError, "ternary don't care match"):
             te.match["header_test.field32"] = "10.0.0.0&&&0.0.0.0"
 
+    def test_string_match_ekey(self):
+        te = sh.TableEntry("StringMatchKeyTable")(action="actionA")
+        te.match["f13"] = "16"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33554507
+match {
+  field_id: 1
+  exact {
+    value: "16"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+"""
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_table_entry_range(self):
         te = sh.TableEntry("RangeOne")(action="actionA")
         te.match["header_test.field32"] = "0..1024"
