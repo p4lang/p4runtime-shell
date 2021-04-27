@@ -436,7 +436,7 @@ action {
     action_id: 16783703
     params {
       param_id: 1
-      value: "\\x00\\x00\\x11\\x00\\x22\\x33"
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
     }
   }
 }
