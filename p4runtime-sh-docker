@@ -47,6 +47,12 @@ def main():
                         action='store_true')
     parser.add_argument('--docker-image', help='p4runtime-sh Docker image to use',
                         type=str, action='store', default='p4lang/p4runtime-sh')
+    parser.add_argument('--volumes',
+                        help='Additonal volumes for the Docker container (same as docker run)',
+                        type=str, action='append', metavar='volume', default=[])
+    parser.add_argument('--mounts',
+                        help='Additonal mounts for the Docker container (same as docker run)',
+                        type=str, action='append', metavar='mount', default=[])
     args, unknown_args = parser.parse_known_args()
 
     docker_args = []
@@ -78,6 +84,11 @@ def main():
         docker_args.extend(["-v", "{}:{}".format(tmpdir, mount_path)])
         new_args.extend(["--config", "{},{}".format(
             os.path.join(mount_path, fname_p4info), os.path.join(mount_path, fname_bin))])
+
+    for volume in args.volumes:
+        docker_args.extend(["-v", volume])
+    for mount in args.mounts:
+        docker_args.extend(["--mount", mount])
 
     cmd = ["docker", "run", "-ti", "--rm"]
     cmd.extend(docker_args)
