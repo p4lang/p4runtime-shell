@@ -488,6 +488,35 @@ action {
         with self.assertRaisesRegex(UserError, "Invalid range match"):
             te.match["header_test.field32"] = "77..22"
 
+    def test_table_entry_optional(self):
+        te = sh.TableEntry("OptionalOne")(action="actionA")
+        te.match["header_test.field32"] = "0x123456"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33611248
+match {
+  field_id: 1
+  optional {
+    value: "\\x12\\x34\\x56"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_table_direct_with_member_id(self):
         te = sh.TableEntry("ExactOne")
         te.match["header_test.field32"] = "10.0.0.0"
