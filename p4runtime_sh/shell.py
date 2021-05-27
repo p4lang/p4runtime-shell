@@ -307,6 +307,7 @@ Set a field value with <self>['<field_name>'] = '...'
   * For ternary match: <self>['<f>'] = '<value>&&&<mask>'
   * For LPM match: <self>['<f>'] = '<value>/<mask>'
   * For range match: <self>['<f>'] = '<value>..<mask>'
+  * For exact match: <self>['<f>'] = '<value>'
 
 If it's inconvenient to use the whole field name, you can use a unique suffix.
 
@@ -349,6 +350,8 @@ You may also use <self>.set(<f>='<value>')
             return self._parse_mf_ternary(s, field_info)
         elif field_info.match_type == p4info_pb2.MatchField.RANGE:
             return self._parse_mf_range(s, field_info)
+        elif field_info.match_type == p4info_pb2.MatchField.OPTIONAL:
+            return self._parse_mf_optional(s, field_info)
         else:
             raise UserError("Unsupported match type for field:\n{}".format(field_info))
 
@@ -360,6 +363,16 @@ You may also use <self>.set(<f>='<value>')
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
         mf.exact.value = bytes_utils.make_canonical_if_option_set(value)
+        return mf
+
+    def _parse_mf_optional(self, s, field_info):
+        v = bytes_utils.parse_value(s.strip(), field_info.bitwidth)
+        return self._sanitize_and_convert_mf_optional(v, field_info)
+
+    def _sanitize_and_convert_mf_optional(self, value, field_info):
+        mf = p4runtime_pb2.FieldMatch()
+        mf.field_id = field_info.id
+        mf.optional.value = bytes_utils.make_canonical_if_option_set(value)
         return mf
 
     def _parse_mf_lpm(self, s, field_info):
