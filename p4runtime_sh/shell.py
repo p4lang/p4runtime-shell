@@ -633,7 +633,6 @@ class _EntityBase:
         self._entity_type = entity_type
         self._entry = p4runtime_cls()
         self._modify_only = modify_only
-        self._p4runtime_cls = p4runtime_cls
 
     def __dir__(self):
         d = ["msg", "read"]
@@ -2383,8 +2382,9 @@ class PacketIn():
 
     def sniff(self, function=None, timeout=None):
         """
-        Return an iterator of packet in message. The function will block until we receive
-        next packet-in message.
+        Return an iterator of packet-in messages.
+        If the function is provided, we do not return an iterator and instead we apply
+        the function to every packet-in message.
         """
         msgs = []
         while True:

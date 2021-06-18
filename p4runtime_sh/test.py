@@ -33,6 +33,7 @@ from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
 from threading import Thread
+import queue
 
 # ensures that IPython uses a "simple prompt"
 # see run_sh() in BaseTestCase for more details
@@ -44,6 +45,7 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
     def __init__(self):
         self.p4info = p4info_pb2.P4Info()
         self.p4runtime_api_version = "1.3.0"
+        self.stored_packet_out = queue.Queue()
 
     def GetForwardingPipelineConfig(self, request, context):
         rep = p4runtime_pb2.GetForwardingPipelineConfigResponse()
@@ -68,6 +70,9 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
                 rep.arbitration.CopyFrom(req.arbitration)
                 rep.arbitration.status.code = code_pb2.OK
                 yield rep
+            elif req.HasField('packet'):
+                self.stored_packet_out.put(req)
+                yield p4runtime_pb2.StreamMessageResponse()
 
     def Capabilities(self, request, context):
         rep = p4runtime_pb2.CapabilitiesResponse()
@@ -1149,7 +1154,7 @@ clone_session_entry {
         packet_out.metadata['egress_port'] = '1'
         packet_out.send()
 
-        actual_msg = sh.client.stream_out_q.get()
+        actual_msg = self.servicer.stored_packet_out.get(block=True, timeout=1)
         self.assertEqual(actual_msg, expected_msg)
 
 

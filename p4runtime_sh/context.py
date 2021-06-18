@@ -56,11 +56,6 @@ class P4RuntimeEntity(enum.Enum):
     packet_replication_engine_entry = 8
 
 
-@enum.unique
-class P4RuntimeStreamMessage(enum.Enum):
-    packet = 1
-
-
 class Context:
     def __init__(self):
         self.p4info = None
