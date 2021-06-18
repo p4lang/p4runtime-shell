@@ -93,7 +93,7 @@ about P4Info objects.
 P4Runtime `Entity` fields), along with `multicast_group_entry` and
 `clone_session_entry`, for runtime entity programming.
 
-`packet` is the command for packet IO, see the [usage](usage/packet_io.md) for more information.
+`packet_in` and `packet_out` are commands for packet IO, see the [usage](usage/packet_io.md) for more information.
 
 The `Write` command can be used to read a `WriteRequest` message from a file
 (for now, Protobuf text format only) and send it to a server:

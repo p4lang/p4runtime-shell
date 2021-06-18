@@ -68,73 +68,29 @@ P4Runtime sh >>> p.send  # send the packet-out message
 P4Runtime sh >>> p = packet_out(payload=b'AAAA', egress_port='1')
 ```
 
-## Receive a packet-in message
+## Receive packet-in messages
 
-There are two ways to handle packet-in messages:
+The `sniff` function will return an iterator which contains packet-in messages when:
 
-### Use `sniff` function to get packet-ins
-
-The `sniff` function will return a list which contains packet-in messages when:
-
-- Receive enough number packets(by passing the `count` parameter)
-- Expired(by passing the `timeout` parameter)
-- Keyboard interrupt(Ctrl + C)
+- The timeout expires (based on the `timeout` parameter)
+- A keyboard interrupt occurs (Ctrl + C)
 
 ```python
-P4Runtime sh >>> packet_in.sniff(timeout=1, count=1)
-# Will return a list once it reach the timeout time or receive enough packets
+# To print all packet-in messages.
+P4Runtime sh >>> for msg in packet_in.sniff(timeout=1):
+             ...:    print(msg)
+
+
+# Prints packet-in messages by using the custom function.
+P4Runtime sh >>> packet_in.sniff(lambda m: print(m), timeout=1)
 Out[2]:
-[payload: "AAAA"
- metadata {
-   metadata_id: 1
-   value: "\000\001"
- }]
-
-# Both timeout and count can be "None".
-# It will wait until user send a keyboard interrupt(Ctrl + C) to the shell.
-P4Runtime sh >>> packet_in.sniff(timeout=None, count=None)
-
-# To log packet-in to a file, use `to_file` parameter
-x = packet_in.sniff(to_file='/tmp/pkt-in.txt')
-
-# To show packet-in messages, set `verbose` to `True`
-x = packet_in.sniff(verbose=True)
-```
-
-### Set up handlers to handle different types of packet-in
-
-To handle the packet-in asynchronously, we can create handlers/functions to process
-packet-ins once we received them.
-
-```python
-# Create a handle to print every packet-in messages
-P4Runtime sh >>> def handle(x):
-            ...:     print(x)
-P4Runtime sh >>> packet_in.register_handler(handle)
-Out[1]: 1  # Once we register the handler, we will get the handler ID
-# The packet-in message will be handled(printed in this example) once we receive it
 payload: "AAAA"
 metadata {
   metadata_id: 1
-  value: "\000\000"
+  value: "\000\001"
 }
-# We can use the ID to deregister the handler
-P4Runtime sh >>> packet_in.deregister_handler(1)
-```
 
-Also, we can add filters to ignore packet-in messages which we don't want to handle.
-
-```python
-# Register the handle to handle packet-in messages that contains any string
-# matches "AA.*A" in payload with ingress port 0, for example "AAbA".
-P4Runtime sh >>> def handle(x):
-            ...:     print(x)
-P4Runtime sh >>> packet_in.register_handler(handle, payload_regex=b'AA.*A', ingress_port='0')
-Out[1]: 2
-# The packet-in message will be handled(printed in this example) once we receive it
-payload: "AAbA"
-metadata {
-  metadata_id: 1
-  value: "\000\000"
-}
+# By setting timeout to `None`, it will wait until user sends a keyboard
+# interrupt(Ctrl + C) to the shell.
+P4Runtime sh >>> packet_in.sniff(lambda m: print(m), timeout=None)
 ```

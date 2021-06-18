@@ -972,7 +972,7 @@ clone_session_entry {
         captured_packet = []
 
         def _sniff_packet(captured_packet):
-            captured_packet += packet_in.sniff(timeout=1, count=1, verbose=True)
+            captured_packet += packet_in.sniff(timeout=1)
         _t = Thread(target=_sniff_packet, args=(captured_packet, ))
         _t.start()
 
@@ -983,14 +983,22 @@ clone_session_entry {
         self.assertEqual(len(captured_packet), 1)
         self.assertEqual(captured_packet[0],  msg)
 
-    def test_packet_in_handle(self):
-        pass
-
-    def test_packet_in_handle_with_filter(self):
-        pass
-
     def test_packet_out(self):
-        pass
+        expected_msg = p4runtime_pb2.StreamMessageRequest()
+        expected_msg.packet.payload = b'Random packet-out payload'
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = 1
+        md.value = b'\x00\x01'
+        expected_msg.packet.metadata.append(md)
+
+        packet_out = sh.PacketOut()
+        packet_out.payload = b'Random packet-out payload'
+        packet_out.metadata['egress_port'] = '1'
+        packet_out.send()
+
+        actual_msg = sh.client.stream_out_q.get()
+        self.assertEqual(actual_msg, expected_msg)
+
 
 class P4RuntimeClientTestCase(BaseTestCase):
     def setUp(self):

@@ -17,21 +17,21 @@ import argparse
 from collections import Counter, namedtuple, OrderedDict
 import enum
 import logging
-from threading import Thread, Event
+from threading import Thread
 from IPython import start_ipython
 from traitlets.config.loader import Config
 from IPython.terminal.prompts import Prompts, Token
 import os.path
-import re
 import sys
 from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4runtime_error
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
-from .context import P4RuntimeEntity, P4Type, Context, P4RuntimeStreamMessage
+from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
 from google.protobuf import descriptor
+import queue
 
 
 context = Context()
@@ -84,6 +84,7 @@ class _PrintContext:
             if msg.DESCRIPTOR.name == "PacketOut":
                 return "packet_out"
         return None
+
 
 def _sub_object(field, value, pcontext):
     id_ = value
@@ -2295,7 +2296,7 @@ class PacketMetadata:
         for name, info in self._md_info.items():
             self.__doc__ += str(info)
         self.__doc__ += """
-Set a metadata value with <self>['<metadata_name>'] = '...'
+Set a metadata value with <self>.['<metadata_name>'] = '...'
 
 You may also use <self>.set(<md_name>='<value>')
 """
@@ -2338,10 +2339,7 @@ You may also use <self>.set(<md_name>='<value>')
         return self._md.values()
 
 
-latest_hid = 0
-packet_in_handles = {}  # Handle ID -> handle function
 class PacketIn():
-
     def __init__(self):
         ctrl_pkt_md = P4Objects(P4Type.controller_packet_metadata)
         self.md_info_list = {}
@@ -2349,84 +2347,39 @@ class PacketIn():
             self.p4_info = ctrl_pkt_md["packet_in"]
             for md_info in self.p4_info.metadata:
                 self.md_info_list[md_info.name] = md_info
-        def _packet_in_recv_func(pkt_in):
-            global packet_in_handles
+        self.packet_in_queue = queue.Queue()
+
+        def _packet_in_recv_func(packet_in_queue):
             while True:
                 msg = client.get_stream_packet("packet", timeout=None)
                 if not msg:
                     break
+                packet_in_queue.put(msg)
 
-                for _, handle in packet_in_handles.items():
-                    try:
-                        handle(msg.packet)
-                    except Exception as e:
-                        print(e)
-
-        self.recv_t = Thread(target=_packet_in_recv_func, args=(self, ))
+        self.recv_t = Thread(target=_packet_in_recv_func, args=(self.packet_in_queue, ))
         self.recv_t.start()
 
-    def register_handler(self, handle, payload_regex=b'', **kwargs):
-        # Register a packet-in handle, will return the handle ID.
-        # Use keyword argument as additional filter to filter the packet in
-        # For example:
-        # register_handler(my_handle, payload_regex=b'.*\x02', egress_port='1')
-        global latest_hid
-        global packet_in_handles
-        filters = {}  # metadata id -> filter
-        if not handle or '__call__' not in dir(handle):
-            raise UserError("handle is not a callable object")
-
-        for key, value in kwargs.items():
-            if key not in self.md_info_list:
-                raise UserError("'{}' is not a packet-in metadata".format(key))
-            md_info = self.md_info_list[key]
-            filters[md_info.id] = bytes_utils.parse_value(value.strip(),
-                                                          md_info.bitwidth)
-
-        def _handle_wraper(packet_in_msg):
-            for md in packet_in_msg.metadata:
-                if md.metadata_id in filters:
-                    if md.value != filters[md.metadata_id]:
-                        return
-            if not re.search(payload_regex, packet_in_msg.payload):
-                return
-            handle(packet_in_msg)
-
-        latest_hid += 1
-        hid = latest_hid
-        packet_in_handles[hid] = _handle_wraper
-        return hid
-
-    def deregister_handler(self, hid):
-        global packet_in_handles
-        if hid not in packet_in_handles:
-            raise UserError("Handle with ID '{}' does not exists".format(hid))
-        return packet_in_handles.pop(hid)
-
-    def sniff(self, timeout=1, count=1, to_file=None, verbose=False):
+    def sniff(self, function=None, timeout=None):
         """
-        Returns number of packet-in messages received within timeout time.
+        Return an iterator of packet in message. The function will block until we receive
+        next packet-in message.
         """
-        result = []
-        _sniff_done = Event()
-        def _sniff_handle(packet_in_msg):
-            result.append(packet_in_msg)
-            if to_file:
-                with open(to_file, "a") as f:
-                    f.write(str(packet_in_msg))
-            if verbose:
-                print(packet_in_msg)
-            if count and len(result) >= count:
-                _sniff_done.set()
-        hid = self.register_handler(_sniff_handle)
-        try:
-            _sniff_done.wait(timeout)
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.deregister_handler(hid)
+        msgs = []
+        while True:
+            try:
+                msgs.append(self.packet_in_queue.get(block=True, timeout=timeout))
+            except queue.Empty:
+                # No item available when timeout.
+                break
+            except KeyboardInterrupt:
+                # User sends an interrupt(e.g., Ctrl+C).
+                break
 
-        return result
+        if function is None:
+            return iter(msgs)
+        else:
+            for msg in msgs:
+                function(msg)
 
 
 class PacketOut:

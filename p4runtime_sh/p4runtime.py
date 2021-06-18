@@ -21,7 +21,6 @@ import logging
 import queue
 import sys
 import threading
-import time
 
 from p4.v1 import p4runtime_pb2
 from p4.v1 import p4runtime_pb2_grpc
