@@ -1,6 +1,6 @@
 # A shell for P4Runtime
 
-[![Build Status](https://travis-ci.org/p4lang/p4runtime-shell.svg?branch=master)](https://travis-ci.org/p4lang/p4runtime-shell)
+[![Build Status](https://travis-ci.org/p4lang/p4runtime-shell.svg?branch=main)](https://travis-ci.org/p4lang/p4runtime-shell)
 
 **This is still a work in progress. Feedback is welcome.**
 
@@ -104,6 +104,32 @@ Write <path to file encoding WriteRequest message in text format>
 
 Type the command name followed by `?` for information on each command,
 e.g. `table_entry?`.
+
+## Canonical representation of bytestrings
+
+The [P4Runtime
+specification](https://p4.org/p4runtime/spec/v1.3.0/P4Runtime-Spec.html#sec-bytestrings)
+defines a canonical representation for binary strings, which all P4Runtime
+servers must support. This representation can be used to format all binary
+strings (match fields, action parameters, ...) in P4Runtime messages exchanged
+between the client and the server. For legacy reasons, some P4Runtime servers do
+not support the canonical representation and require binary strings to be
+byte-padded according to the bitwidth specified in the P4Info message. While all
+P4Runtime-conformant servers must also accept this legacy format, it can lead to
+read-write asymmetry for P4Runtime entities. For example a client may insert a
+TableEntry using the legacy format for match fields, but when reading the same
+TableEntry back, the server may return a message with match field values in the
+canonical representation. When a client uses the canonical representation,
+read-write symmetry is always guaranteed.
+
+If you are dealing with a legacy server which rejects binary strings formatted
+using the canonical representation (making this server non conformant to the
+specification), you can revert to the byte-padded format by typing the following
+command in the shell:
+
+```python
+P4Runtime sh >>> global_options["canonical_bytestrings"] = False
+```
 
 ## Example usage
 
@@ -223,6 +249,7 @@ Set a field value with <self>['<field_name>'] = '...'
   * For ternary match: <self>['<f>'] = '<value>&&&<mask>'
   * For LPM match: <self>['<f>'] = '<value>/<mask>'
   * For range match: <self>['<f>'] = '<value>..<mask>'
+  * For optional match: <self>['<f>'] = '<value>'
 
 If it's inconvenient to use the whole field name, you can use a unique suffix.
 

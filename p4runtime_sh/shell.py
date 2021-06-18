@@ -27,6 +27,7 @@ from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
+from . global_options import global_options
 from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
@@ -323,6 +324,7 @@ Set a field value with <self>['<field_name>'] = '...'
   * For ternary match: <self>['<f>'] = '<value>&&&<mask>'
   * For LPM match: <self>['<f>'] = '<value>/<mask>'
   * For range match: <self>['<f>'] = '<value>..<mask>'
+  * For optional match: <self>['<f>'] = '<value>'
 
 If it's inconvenient to use the whole field name, you can use a unique suffix.
 
@@ -365,14 +367,29 @@ You may also use <self>.set(<f>='<value>')
             return self._parse_mf_ternary(s, field_info)
         elif field_info.match_type == p4info_pb2.MatchField.RANGE:
             return self._parse_mf_range(s, field_info)
+        elif field_info.match_type == p4info_pb2.MatchField.OPTIONAL:
+            return self._parse_mf_optional(s, field_info)
         else:
             raise UserError("Unsupported match type for field:\n{}".format(field_info))
 
     def _parse_mf_exact(self, s, field_info):
         v = bytes_utils.parse_value(s.strip(), field_info.bitwidth)
+        return self._sanitize_and_convert_mf_exact(v, field_info)
+
+    def _sanitize_and_convert_mf_exact(self, value, field_info):
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.exact.value = v
+        mf.exact.value = bytes_utils.make_canonical_if_option_set(value)
+        return mf
+
+    def _parse_mf_optional(self, s, field_info):
+        v = bytes_utils.parse_value(s.strip(), field_info.bitwidth)
+        return self._sanitize_and_convert_mf_optional(v, field_info)
+
+    def _sanitize_and_convert_mf_optional(self, value, field_info):
+        mf = p4runtime_pb2.FieldMatch()
+        mf.field_id = field_info.id
+        mf.optional.value = bytes_utils.make_canonical_if_option_set(value)
         return mf
 
     def _parse_mf_lpm(self, s, field_info):
@@ -391,7 +408,6 @@ You may also use <self>.set(<f>='<value>')
 
         return self._sanitize_and_convert_mf_lpm(prefix, length, field_info)
 
-    # TODO(antonin): use canonical representation when server supports it
     def _sanitize_and_convert_mf_lpm(self, prefix, length, field_info):
         if length == 0:
             raise UserError(
@@ -421,7 +437,7 @@ You may also use <self>.set(<f>='<value>')
         if transformed:
             print("LPM value was transformed to conform to the P4Runtime spec "
                   "(trailing bits must be unset)")
-        mf.lpm.value = bytes(barray)
+        mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         return mf
 
     def _parse_mf_ternary(self, s, field_info):
@@ -437,14 +453,12 @@ You may also use <self>.set(<f>='<value>')
 
         return self._sanitize_and_convert_mf_ternary(value, mask, field_info)
 
-    # TODO(antonin): use canonical representation when server supports it
     def _sanitize_and_convert_mf_ternary(self, value, mask, field_info):
         if int.from_bytes(mask, byteorder='big') == 0:
             raise UserError("Ignoring ternary don't care match (mask of 0s) as per P4Runtime spec")
 
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.ternary.mask = mask
 
         barray = bytearray(value)
         transformed = False
@@ -455,10 +469,10 @@ You may also use <self>.set(<f>='<value>')
         if transformed:
             print("Ternary value was transformed to conform to the P4Runtime spec "
                   "(masked off bits must be unset)")
-        mf.ternary.value = bytes(barray)
+        mf.ternary.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
+        mf.ternary.mask = bytes_utils.make_canonical_if_option_set(mask)
         return mf
 
-    # TODO(antonin): use canonical representation when server supports it
     def _parse_mf_range(self, s, field_info):
         try:
             start, end = s.split('..')
@@ -484,8 +498,8 @@ You may also use <self>.set(<f>='<value>')
                 "Ignoring range don't care match (all possible values) as per P4Runtime spec")
         mf = p4runtime_pb2.FieldMatch()
         mf.field_id = field_info.id
-        mf.range.low = start
-        mf.range.high = end
+        mf.range.low = bytes_utils.make_canonical_if_option_set(start)
+        mf.range.high = bytes_utils.make_canonical_if_option_set(end)
         return mf
 
     def _add_field(self, field_info):
@@ -586,7 +600,7 @@ class Action:
         v = bytes_utils.parse_value(s, param_info.bitwidth)
         p = p4runtime_pb2.Action.Param()
         p.param_id = param_info.id
-        p.value = v
+        p.value = bytes_utils.make_canonical_if_option_set(v)
         return p
 
     def msg(self):
@@ -1295,6 +1309,7 @@ class TableEntry(_P4EntityBase):
                 self._direct_meter = context.get_obj_by_id(res_id)
         self._counter_data = None
         self._meter_config = None
+        self.metadata = b""
         self.__doc__ = """
 An entry for table '{}'
 
@@ -1332,6 +1347,8 @@ Or access the group_id with <self>.group_id.
 To set the priority, use <self>.priority = <expr>.
 
 To mark the entry as default, use <self>.is_default = True.
+
+To add metadata to the entry, use <self>.metadata = <expr>.
 """
         if ap is None:
             self.__doc__ += """
@@ -1373,7 +1390,7 @@ For information about how to read table entries, use <self>.read?
 
     def __dir__(self):
         d = super().__dir__() + [
-            "match", "priority", "is_default",
+            "match", "priority", "is_default", "metadata",
             "clear_action", "clear_match", "clear_counter_data", "clear_meter_config"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
@@ -1502,6 +1519,9 @@ For information about how to read table entries, use <self>.read?
                 self._meter_config = None
                 return
             raise UserError("Cannot set 'meter_config' directly")
+        elif name == "metadata":
+            if type(value) is not bytes:
+                raise UserError("metadata must be a byte string")
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
@@ -1540,6 +1560,7 @@ For information about how to read table entries, use <self>.read?
     def _from_msg(self, msg):
         self.priority = msg.priority
         self.is_default = msg.is_default_action
+        self.metadata = msg.metadata
         for mf in msg.match:
             mf_name = context.get_mf_name(self.name, mf.field_id)
             self.match._mk[mf_name] = mf
@@ -1592,6 +1613,7 @@ For information about how to read table entries, use <self>.read?
         entry.match.extend(self.match._mk.values())
         entry.priority = self.priority
         entry.is_default_action = self.is_default
+        entry.metadata = self.metadata
         if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
             entry.action.action.CopyFrom(self._action_spec.msg())
         elif self._action_spec_type == self._ActionSpecType.MEMBER_ID:
@@ -1874,7 +1896,7 @@ class _MeterEntryBase(_P4EntityBase):
 
     def __getattr__(self, name):
         if name in _MeterConfig.attrs():
-            self._config, r = _MeterConfig.get_count(
+            self._config, r = _MeterConfig.get_param(
                 self._config, self.name, self._meter_type, name)
             return r
         if name == "config":
@@ -2579,6 +2601,7 @@ def main():
         "MulticastGroupEntry": MulticastGroupEntry,
         "CloneSessionEntry": CloneSessionEntry,
         "APIVersion": APIVersion,
+        "global_options": global_options,
     }
 
     for obj_type in P4Type:

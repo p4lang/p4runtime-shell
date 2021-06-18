@@ -28,6 +28,7 @@ from unittest.mock import ANY, Mock, patch
 from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 from p4.config.v1 import p4info_pb2
 from p4runtime_sh.context import P4Type, P4RuntimeEntity
+from p4runtime_sh.global_options import global_options
 from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
@@ -157,6 +158,8 @@ class UnitTestCase(BaseTestCase):
         self.servicer.Read = Mock(spec=[], return_value=p4runtime_pb2.ReadResponse())
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
+        global_options.reset()
+
         sh.setup(device_id=self.device_id,
                  grpc_addr=self.grpc_addr,
                  election_id=self.election_id,
@@ -253,7 +256,7 @@ class UnitTestCase(BaseTestCase):
 
     def test_table_entry_exact(self):
         te = sh.TableEntry("ExactOne")(action="actionA")
-        te.match["header_test.field32"] = "0x12345678"
+        te.match["header_test.field32"] = "0x123456"
         te.action["param"] = "aa:bb:cc:dd:ee:ff"
         te.insert()
 
@@ -262,7 +265,7 @@ table_id: 33582705
 match {
   field_id: 1
   exact {
-    value: "\\x12\\x34\\x56\\x78"
+    value: "\\x12\\x34\\x56"
   }
 }
 action {
@@ -280,6 +283,61 @@ action {
             p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
+    def test_canonical_bytestrings_on_off(self):
+        def get_te():
+            te = sh.TableEntry("ExactOne")(action="actionA")
+            te.match["header_test.field32"] = "0x0"
+            te.action["param"] = "00:00:11:00:22:33"
+            return te
+
+        expected_entry = """
+table_id: 33582705
+match {
+  field_id: 1
+  exact {
+    value: "\\x00"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\x11\\x00\\x22\\x33"
+    }
+  }
+}
+"""
+        get_te().insert()
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
+
+        sh.global_options["canonical_bytestrings"] = False  # enable legacy (byte-padded) format
+
+        expected_entry = """
+table_id: 33582705
+match {
+  field_id: 1
+  exact {
+    value: "\\x00\\x00\\x00\\x00"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\x00\\x00\\x11\\x00\\x22\\x33"
+    }
+  }
+}
+"""
+        get_te().insert()
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        self.servicer.Write.assert_called_with(ProtoCmp(expected_req), ANY)
 
     @nose2.tools.params(("10.0.0.0/16", "\\x0a\\x00\\x00\\x00", 16),
                         ("10.0.240.0/20", "\\x0a\\x00\\xf0\\x00", 20),
@@ -360,6 +418,36 @@ action {
         with self.assertRaisesRegex(UserError, "ternary don't care match"):
             te.match["header_test.field32"] = "10.0.0.0&&&0.0.0.0"
 
+    def test_string_match_ekey(self):
+        te = sh.TableEntry("StringMatchKeyTable")(action="actionA")
+        te.match["f13"] = "16"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33554507
+match {
+  field_id: 1
+  exact {
+    value: "16"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+"""
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_table_entry_range(self):
         te = sh.TableEntry("RangeOne")(action="actionA")
         te.match["header_test.field32"] = "0..1024"
@@ -371,8 +459,8 @@ table_id: 33603558
 match {
   field_id: 1
   range {
-    low: "\\x00\\x00\\x00\\x00"
-    high: "\\x00\\x00\\x04\\x00"
+    low: "\\x00"
+    high: "\\x04\\x00"
   }
 }
 action {
@@ -400,6 +488,35 @@ action {
         te = sh.TableEntry("RangeOne")
         with self.assertRaisesRegex(UserError, "Invalid range match"):
             te.match["header_test.field32"] = "77..22"
+
+    def test_table_entry_optional(self):
+        te = sh.TableEntry("OptionalOne")(action="actionA")
+        te.match["header_test.field32"] = "0x123456"
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33611248
+match {
+  field_id: 1
+  optional {
+    value: "\\x12\\x34\\x56"
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+"""
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
     def test_table_direct_with_member_id(self):
         te = sh.TableEntry("ExactOne")
@@ -507,6 +624,25 @@ action {
 
         with self.assertRaisesRegex(UserError, "does not support direct actions"):
             te = sh.TableEntry("IndirectWS")(action="actionA")
+
+    def test_table_metadata(self):
+        te = sh.TableEntry("ExactOne")(action="actionA")
+        te.metadata = b"abcdef\x00\xff"
+        te.insert()
+
+        expected_entry = """
+table_id: 33582705
+action {
+  action {
+    action_id: 16783703
+  }
+}
+metadata: "abcdef\\x00\\xff"
+"""
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
     def test_table_indirect_oneshot(self):
         te = sh.TableEntry("IndirectWS")
@@ -957,7 +1093,24 @@ clone_session_entry {
         version = sh.APIVersion()
         self.assertEqual(version, self.servicer.p4runtime_api_version)
 
-    def test_packet_in_sniff(self):
+    def test_global_options(self):
+        option_name = "canonical_bytestrings"
+        options = sh.global_options
+        self.assertEqual(options[option_name], True)
+        options[option_name] = False
+        self.assertEqual(options.get(option_name), False)
+        options.reset()
+        self.assertEqual(options.get(option_name), True)
+        options.set(option_name, False)
+        self.assertEqual(options[option_name], False)
+
+    def test_global_options_invalid(self):
+        with self.assertRaisesRegex(UserError, "Unknown option name"):
+            sh.global_options["foo"]
+        with self.assertRaisesRegex(UserError, "Invalid value type"):
+            sh.global_options["canonical_bytestrings"] = "bar"
+
+    def test_packet_in(self):
         # In this tests we will send a packet-in message from the servicer and check if
         # packet_in.sniff method works
         msg = p4runtime_pb2.StreamMessageResponse()
@@ -1016,7 +1169,7 @@ class P4RuntimeClientTestCase(BaseTestCase):
         self.servicer.StreamChannel = Mock(spec=[])
         p4runtime_pb2_grpc.add_P4RuntimeServicer_to_server(self.servicer, self.server)
 
-    def test_arbitration_slave(self):
+    def test_arbitration_backup(self):
         def StreamChannelMock(request_iterator, context):
             for req in request_iterator:
                 if req.HasField('arbitration'):
@@ -1028,6 +1181,6 @@ class P4RuntimeClientTestCase(BaseTestCase):
 
         with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
             client = sh.P4RuntimeClient(self.device_id, self.grpc_addr, (0, 1))
-            self.assertIn("You are not master", mock_stdout.getvalue())
+            self.assertIn("You are not the primary client", mock_stdout.getvalue())
             self.servicer.StreamChannel.assert_called_once_with(ANY, ANY)
             client.tear_down()

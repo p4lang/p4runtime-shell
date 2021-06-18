@@ -14,6 +14,7 @@
 #
 
 from ipaddr import IPv4Address, IPv6Address, AddressValueError
+from . global_options import global_options, Options
 from .utils import UserError
 
 
@@ -84,7 +85,32 @@ def macAddr_to_bytes(addr):
     return bytes(bytes_)
 
 
+def str_to_bytes(value_str):
+    return bytes(value_str, 'utf-8')
+
+
+def to_canonical_bytes(bytes_):
+    if len(bytes_) == 0:
+        return bytes_
+    num_zeros = 0
+    for b in bytes_:
+        if b != 0:
+            break
+        num_zeros += 1
+    if num_zeros == len(bytes_):
+        return bytes_[:1]
+    return bytes_[num_zeros:]
+
+
+def make_canonical_if_option_set(bytes_):
+    if global_options.get_option(Options.canonical_bytestrings):
+        return to_canonical_bytes(bytes_)
+    return bytes_
+
+
 def parse_value(value_str, bitwidth, base=0):
+    if bitwidth == 0:
+        return str_to_bytes(value_str)
     if bitwidth == 32 and '.' in value_str:
         return ipv4Addr_to_bytes(value_str)
     elif bitwidth == 48 and ':' in value_str:

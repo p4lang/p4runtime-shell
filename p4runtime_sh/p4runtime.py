@@ -202,11 +202,11 @@ class P4RuntimeClient:
         if rep is None:
             logging.critical("Failed to establish session with server")
             sys.exit(1)
-        is_master = (rep.arbitration.status.code == code_pb2.OK)
+        is_primary = (rep.arbitration.status.code == code_pb2.OK)
         logging.debug("Session established, client is '{}'".format(
-            'master' if is_master else 'slave'))
-        if not is_master:
-            print("You are not master, you only have read access to the server")
+            'primary' if is_primary else 'backup'))
+        if not is_primary:
+            print("You are not the primary client, you only have read access to the server")
 
     def get_stream_packet(self, type_, timeout=1):
         if type_ not in self.stream_in_q:
