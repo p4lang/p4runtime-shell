@@ -72,7 +72,6 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
                 yield rep
             elif req.HasField('packet'):
                 self.stored_packet_out.put(req)
-                yield p4runtime_pb2.StreamMessageResponse()
 
     def Capabilities(self, request, context):
         rep = p4runtime_pb2.CapabilitiesResponse()
