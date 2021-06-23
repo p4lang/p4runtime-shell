@@ -17,6 +17,7 @@ import argparse
 from collections import Counter, namedtuple, OrderedDict
 import enum
 import logging
+from threading import Thread
 from IPython import start_ipython
 from traitlets.config.loader import Config
 from IPython.terminal.prompts import Prompts, Token
@@ -31,6 +32,7 @@ from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
 from google.protobuf import descriptor
+import queue
 
 
 context = Context()
@@ -76,6 +78,14 @@ class _PrintContext:
                     return None
         return None
 
+    def find_controller_packet_metadata(self):
+        for msg in reversed(self.stack):
+            if msg.DESCRIPTOR.name == "PacketIn":
+                return "packet_in"
+            if msg.DESCRIPTOR.name == "PacketOut":
+                return "packet_out"
+        return None
+
 
 def _sub_object(field, value, pcontext):
     id_ = value
@@ -101,6 +111,12 @@ def _sub_ap(field, value, pcontext):
         logging.error("Cannot find any action in context")
         return
     return context.get_param_name(action_name, id_)
+
+
+def _sub_pkt_md(field, value, pcontext):
+    id_ = value
+    ctrl_pkt_md_name = pcontext.find_controller_packet_metadata()
+    return context.get_packet_metadata_name_from_id(ctrl_pkt_md_name, id_)
 
 
 def _gen_pretty_print_proto_field(substitutions, pcontext):
@@ -187,6 +203,7 @@ def _repr_pretty_p4runtime(msg):
         "DigestEntry": {"digest_id": _sub_object},
         "DigestListAck": {"digest_id": _sub_object},
         "DigestList": {"digest_id": _sub_object},
+        "PacketMetadata": {"metadata_id": _sub_pkt_md}
     }
     return _repr_pretty_proto(msg, substitutions)
 
@@ -2285,6 +2302,148 @@ Access truncation length with <self>.packet_length_bytes.
         return self
 
 
+class PacketMetadata:
+    def __init__(self, metadata_info_list):
+        self._md_info = OrderedDict()
+        self._md = OrderedDict()
+        # Initialize every metadata to zero value
+        for md in metadata_info_list:
+            self._md_info[md.name] = md
+            self._md[md.name] = self._parse_md('0', md)
+        self._set_docstring()
+
+    def _set_docstring(self):
+        self.__doc__ = "Available metadata:\n\n"
+        for name, info in self._md_info.items():
+            self.__doc__ += str(info)
+        self.__doc__ += """
+Set a metadata value with <self>.['<metadata_name>'] = '...'
+
+You may also use <self>.set(<md_name>='<value>')
+"""
+
+    def __dir__(self):
+        return ["clear"]
+
+    def _get_md_info(self, name):
+        if name in self._md_info:
+            return self._md_info[name]
+        raise UserError("'{}' is not a valid metadata name".format(name))
+
+    def __getitem__(self, name):
+        _ = self._get_md_info(name)
+        print(self._md.get(name, "Unset"))
+
+    def _parse_md(self, value, md_info):
+        if type(value) is not str:
+            raise UserError("Metadata value must be a string")
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = md_info.id
+        md.value = bytes_utils.parse_value(value.strip(), md_info.bitwidth)
+        return md
+
+    def __setitem__(self, name, value):
+        md_info = self._get_md_info(name)
+        self._md[name] = self._parse_md(value, md_info)
+
+    def _ipython_key_completions_(self):
+        return self._md_info.keys()
+
+    def set(self, **kwargs):
+        for name, value in kwargs.items():
+            self[name] = value
+
+    def clear(self):
+        self._md.clear()
+
+    def values(self):
+        return self._md.values()
+
+
+class PacketIn():
+    def __init__(self):
+        ctrl_pkt_md = P4Objects(P4Type.controller_packet_metadata)
+        self.md_info_list = {}
+        if "packet_in" in ctrl_pkt_md:
+            self.p4_info = ctrl_pkt_md["packet_in"]
+            for md_info in self.p4_info.metadata:
+                self.md_info_list[md_info.name] = md_info
+        self.packet_in_queue = queue.Queue()
+
+        def _packet_in_recv_func(packet_in_queue):
+            while True:
+                msg = client.get_stream_packet("packet", timeout=None)
+                if not msg:
+                    break
+                packet_in_queue.put(msg)
+
+        self.recv_t = Thread(target=_packet_in_recv_func, args=(self.packet_in_queue, ))
+        self.recv_t.start()
+
+    def sniff(self, function=None, timeout=None):
+        """
+        Return an iterator of packet-in messages.
+        If the function is provided, we do not return an iterator and instead we apply
+        the function to every packet-in message.
+        """
+        msgs = []
+        while True:
+            try:
+                msgs.append(self.packet_in_queue.get(block=True, timeout=timeout))
+            except queue.Empty:
+                # No item available when timeout.
+                break
+            except KeyboardInterrupt:
+                # User sends an interrupt(e.g., Ctrl+C).
+                break
+
+        if function is None:
+            return iter(msgs)
+        else:
+            for msg in msgs:
+                function(msg)
+
+
+class PacketOut:
+    def __init__(self, payload=b'', **kwargs):
+
+        self.p4_info = P4Objects(P4Type.controller_packet_metadata)["packet_out"]
+        self.payload = payload
+        self.metadata = PacketMetadata(self.p4_info.metadata)
+        if kwargs:
+            for key, value in kwargs.items():
+                self.metadata[key] = value
+
+    def _update_msg(self):
+        self._entry = p4runtime_pb2.PacketOut()
+        self._entry.payload = self.payload
+        self._entry.metadata.extend(self.metadata.values())
+
+    def __setattr__(self, name, value):
+        if name == "payload" and type(value) is not bytes:
+            raise UserError("payload must be a bytes type")
+        if name == "metadata" and type(value) is not PacketMetadata:
+            raise UserError("metadata must be a PacketMetadata type")
+        return super().__setattr__(name, value)
+
+    def __dir__(self):
+        return ["metadata", "send", "payload"]
+
+    def __str__(self):
+        self._update_msg()
+        return str(_repr_pretty_p4runtime(self._entry))
+
+    def _repr_pretty_(self, p, cycle):
+        self._update_msg()
+        p.text(_repr_pretty_p4runtime(self._entry))
+
+    def send(self):
+        self._update_msg()
+        msg = p4runtime_pb2.StreamMessageRequest()
+        msg.packet.CopyFrom(self._entry)
+        client.stream_out_q.put(msg)
+
+
 def Write(input_):
     """
     Reads a WriteRequest from a file (text format) and sends it to the server.
@@ -2462,6 +2621,8 @@ def main():
 
     user_ns["multicast_group_entry"] = MulticastGroupEntry
     user_ns["clone_session_entry"] = CloneSessionEntry
+    user_ns["packet_in"] = PacketIn()  # Singleton packet_in object to handle all packet-in cases
+    user_ns["packet_out"] = PacketOut
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 

@@ -21,7 +21,6 @@ import logging
 import queue
 import sys
 import threading
-import time
 
 from p4.v1 import p4runtime_pb2
 from p4.v1 import p4runtime_pb2_grpc
@@ -150,7 +149,13 @@ class P4RuntimeClient:
 
     def set_up_stream(self):
         self.stream_out_q = queue.Queue()
-        self.stream_in_q = queue.Queue()
+        # queues for different messages
+        self.stream_in_q = {
+            "arbitration": queue.Queue(),
+            "packet": queue.Queue(),
+            "digest": queue.Queue(),
+            "unknown": queue.Queue(),
+        }
 
         def stream_req_iterator():
             while True:
@@ -163,19 +168,25 @@ class P4RuntimeClient:
             @parse_p4runtime_error
             def stream_recv():
                 for p in stream:
-                    self.stream_in_q.put(p)
+                    if p.HasField("arbitration"):
+                        self.stream_in_q["arbitration"].put(p)
+                    elif p.HasField("packet"):
+                        self.stream_in_q["packet"].put(p)
+                    elif p.HasField("digest"):
+                        self.stream_in_q["digest"].put(p)
+                    else:
+                        self.stream_in_q["unknown"].put(p)
             try:
                 stream_recv()
             except P4RuntimeException as e:
                 logging.critical("StreamChannel error, closing stream")
                 logging.critical(e)
-                self.stream_in_q.put(None)
-
+                for k in self.stream_in_q:
+                    self.stream_in_q[k].put(None)
         self.stream = self.stub.StreamChannel(stream_req_iterator())
         self.stream_recv_thread = threading.Thread(
             target=stream_recv_wrapper, args=(self.stream,))
         self.stream_recv_thread.start()
-
         self.handshake()
 
     def handshake(self):
@@ -198,21 +209,14 @@ class P4RuntimeClient:
             print("You are not the primary client, you only have read access to the server")
 
     def get_stream_packet(self, type_, timeout=1):
-        start = time.time()
+        if type_ not in self.stream_in_q:
+            print("Unknown stream type '{}'".format(type_))
+            return None
         try:
-            while True:
-                remaining = timeout - (time.time() - start)
-                if remaining < 0:
-                    break
-                msg = self.stream_in_q.get(timeout=remaining)
-                if msg is None:
-                    return None
-                if not msg.HasField(type_):
-                    continue
-                return msg
+            msg = self.stream_in_q[type_].get(timeout=timeout)
+            return msg
         except queue.Empty:  # timeout expired
-            pass
-        return None
+            return None
 
     @parse_p4runtime_error
     def get_p4info(self):
@@ -246,6 +250,10 @@ class P4RuntimeClient:
         if self.stream_out_q:
             logging.debug("Cleaning up stream")
             self.stream_out_q.put(None)
+        if self.stream_in_q:
+            for k in self.stream_in_q:
+                self.stream_in_q[k].put(None)
+        if self.stream_recv_thread:
             self.stream_recv_thread.join()
         self.channel.close()
         del self.channel  # avoid a race condition if channel deleted when process terminates

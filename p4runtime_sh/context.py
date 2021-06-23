@@ -27,6 +27,7 @@ class P4Type(enum.Enum):
     direct_counter = 5
     meter = 6
     direct_meter = 7
+    controller_packet_metadata = 8
 
 
 P4Type.table.p4info_name = "tables"
@@ -36,7 +37,7 @@ P4Type.counter.p4info_name = "counters"
 P4Type.direct_counter.p4info_name = "direct_counters"
 P4Type.meter.p4info_name = "meters"
 P4Type.direct_meter.p4info_name = "direct_meters"
-
+P4Type.controller_packet_metadata.p4info_name = "controller_packet_metadata"
 
 for obj_type in P4Type:
     obj_type.pretty_name = obj_type.name.replace('_', ' ')
@@ -126,6 +127,15 @@ class Context:
 
     def get_obj_by_id(self, id_):
         return self.p4info_obj_map_by_id[id_]
+
+    def get_packet_metadata_name_from_id(self, ctrl_pkt_md_name, id_):
+        ctrl_pkt_md = self.get_obj(P4Type.controller_packet_metadata, ctrl_pkt_md_name)
+        if not ctrl_pkt_md:
+            return None
+        for md in ctrl_pkt_md.metadata:
+            if md.id == id_:
+                return md.name
+        return None
 
     # In order to make the CLI easier to use, we accept any suffix that
     # uniquely identifies the object among p4info objects of the same type.

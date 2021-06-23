@@ -32,6 +32,8 @@ from p4runtime_sh.global_options import global_options
 from p4runtime_sh.p4runtime import P4RuntimeException
 from p4runtime_sh.utils import UserError
 import nose2.tools
+from threading import Thread
+import queue
 
 # ensures that IPython uses a "simple prompt"
 # see run_sh() in BaseTestCase for more details
@@ -42,7 +44,8 @@ import p4runtime_sh.shell as sh  # noqa: E402
 class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
     def __init__(self):
         self.p4info = p4info_pb2.P4Info()
-        self.p4runtime_api_version = "1.2.0-dev"
+        self.p4runtime_api_version = "1.3.0"
+        self.stored_packet_out = queue.Queue()
 
     def GetForwardingPipelineConfig(self, request, context):
         rep = p4runtime_pb2.GetForwardingPipelineConfigResponse()
@@ -67,6 +70,8 @@ class P4RuntimeServicer(p4runtime_pb2_grpc.P4RuntimeServicer):
                 rep.arbitration.CopyFrom(req.arbitration)
                 rep.arbitration.status.code = code_pb2.OK
                 yield rep
+            elif req.HasField('packet'):
+                self.stored_packet_out.put(req)
 
     def Capabilities(self, request, context):
         rep = p4runtime_pb2.CapabilitiesResponse()
@@ -1108,6 +1113,48 @@ clone_session_entry {
             sh.global_options["foo"]
         with self.assertRaisesRegex(UserError, "Invalid value type"):
             sh.global_options["canonical_bytestrings"] = "bar"
+
+    def test_packet_in(self):
+        # In this tests we will send a packet-in message from the servicer and check if
+        # packet_in.sniff method works
+        msg = p4runtime_pb2.StreamMessageResponse()
+        msg.packet.payload = b'Random packet-in payload'
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = 1
+        md.value = b'\x00\x01'
+        msg.packet.metadata.append(md)
+
+        # Have to sniff the packet in another thread since this blocks the thread
+        packet_in = sh.PacketIn()
+        captured_packet = []
+
+        def _sniff_packet(captured_packet):
+            captured_packet += packet_in.sniff(timeout=1)
+        _t = Thread(target=_sniff_packet, args=(captured_packet, ))
+        _t.start()
+
+        # TODO: modify the servicer to send stream message?
+        sh.client.stream_in_q["packet"].put(msg)
+        _t.join()
+
+        self.assertEqual(len(captured_packet), 1)
+        self.assertEqual(captured_packet[0],  msg)
+
+    def test_packet_out(self):
+        expected_msg = p4runtime_pb2.StreamMessageRequest()
+        expected_msg.packet.payload = b'Random packet-out payload'
+        md = p4runtime_pb2.PacketMetadata()
+        md.metadata_id = 1
+        md.value = b'\x00\x01'
+        expected_msg.packet.metadata.append(md)
+
+        packet_out = sh.PacketOut()
+        packet_out.payload = b'Random packet-out payload'
+        packet_out.metadata['egress_port'] = '1'
+        packet_out.send()
+
+        actual_msg = self.servicer.stored_packet_out.get(block=True, timeout=1)
+        self.assertEqual(actual_msg, expected_msg)
 
 
 class P4RuntimeClientTestCase(BaseTestCase):
