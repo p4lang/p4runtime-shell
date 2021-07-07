@@ -564,7 +564,6 @@ group_id: 1
 members {
   member_id: 1
   weight: 1
-  watch: 0
 }
 """
 
@@ -676,7 +675,6 @@ action {
         }
       }
       weight: 1
-      watch: 0
     }
     action_profile_actions {
       action {
@@ -687,7 +685,6 @@ action {
         }
       }
       weight: 2
-      watch: 0
     }
   }
 }
