@@ -857,19 +857,24 @@ For information about how to read members, use <self>.read?
 class GroupMember:
     """
     A member in an ActionProfileGroup.
-    Construct with GroupMember(<member_id>, weight=<weight>, watch=<watch>).
-    You can set / get attributes member_id (required), weight (default 1), watch (default 0).
+    Construct with GroupMember(<member_id>, weight=<weight>, watch=<watch>,
+    watch_port=<watch_port>).
+    You can set / get attributes member_id (required), weight (default 1), watch (default 0),
+    watch_port (default "").
     """
-    def __init__(self, member_id=None, weight=1, watch=0):
+    def __init__(self, member_id=None, weight=1, watch=0, watch_port=b""):
         if member_id is None:
             raise UserError("member_id is required")
         self._msg = p4runtime_pb2.ActionProfileGroup.Member()
         self._msg.member_id = member_id
         self._msg.weight = weight
-        self._msg.watch = watch
+        if watch:
+            self._msg.watch = watch
+        if watch_port:
+            self._msg.watch_port = watch_port
 
     def __dir__(self):
-        return ["member_id", "weight", "watch"]
+        return ["member_id", "weight", "watch", "watch_port"]
 
     def __setattr__(self, name, value):
         if name[0] == "_":
@@ -890,6 +895,11 @@ class GroupMember:
                 raise UserError("watch must be an integer")
             self._msg.watch = value
             return
+        if name == "watch_port":
+            if type(value) is not bytes:
+                raise UserError("watch_port must be a byte string")
+            self._msg.watch_port = value
+            return
         super().__setattr__(name, value)
 
     def __getattr__(self, name):
@@ -899,6 +909,8 @@ class GroupMember:
             return self._msg.weight
         if name == "watch":
             return self._msg.watch
+        if name == "watch_port":
+            return self._msg.watch_port
         return super().__getattr__(name)
 
     def __str__(self):
@@ -924,8 +936,9 @@ Use <self>.info to display the P4Info entry for the action profile.
 Set the group id with <self>.group_id = <expr>. Default is 0.
 Set the max size with <self>.max_size = <expr>. Default is 0.
 
-Add members to the group with <self>.add(<member_id>, weight=<weight>, watch=<watch>).
-weight and watch are optional (default to 1 and 0 respectively).
+Add members to the group with <self>.add(<member_id>, weight=<weight>, watch=<watch>,
+watch_port=<watch_port>).
+weight, watch and watch port are optional (default to 1, 0 and "" respectively).
 
 Typical usage to insert an action profile group:
 g = action_profile_group['<action_profile_name>'](group_id=1)
@@ -962,9 +975,9 @@ For information about how to read groups, use <self>.read?
                     raise UserError("members must be a list of GroupMember objects")
         super().__setattr__(name, value)
 
-    def add(self, member_id=None, weight=1, watch=0):
+    def add(self, member_id=None, weight=1, watch=0, watch_port=b""):
         """Add a member to the members list."""
-        self.members.append(GroupMember(member_id, weight, watch))
+        self.members.append(GroupMember(member_id, weight, watch, watch_port))
         return self
 
     def clear(self):
@@ -987,7 +1000,7 @@ For information about how to read groups, use <self>.read?
         self.max_size = msg.max_size
         self.members = []
         for member in msg.members:
-            self.add(member.member_id, member.weight, member.watch)
+            self.add(member.member_id, member.weight, member.watch, member.watch_port)
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1021,18 +1034,21 @@ def _get_action_profile(table_name):
 class OneshotAction:
     """
     An action in a oneshot action set.
-    Construct with OneshotAction(<action (Action instance)>, weight=<weight>, watch=<watch>).
-    You can set / get attributes action (required), weight (default 1), watch (default 0).
+    Construct with OneshotAction(<action (Action instance)>, weight=<weight>, watch=<watch>,
+    watch_port=<watch_port>).
+    You can set / get attributes action (required), weight (default 1), watch (default 0),
+    watch_port (default "").
     """
-    def __init__(self, action=None, weight=1, watch=0):
+    def __init__(self, action=None, weight=1, watch=0, watch_port=b""):
         if action is None:
             raise UserError("action is required")
         self.action = action
         self.weight = weight
         self.watch = watch
+        self.watch_port = watch_port
 
     def __dir__(self):
-        return ["action", "weight", "watch", "msg"]
+        return ["action", "weight", "watch", "watch_port", "msg"]
 
     def __setattr__(self, name, value):
         if name[0] == "_":
@@ -1047,13 +1063,20 @@ class OneshotAction:
         elif name == "watch":
             if type(value) is not int:
                 raise UserError("watch must be an integer")
+        elif name == "watch_port":
+            print(type(value), value)
+            if type(value) is not bytes:
+                raise UserError("watch_port must be a byte string")
         super().__setattr__(name, value)
 
     def msg(self):
         msg = p4runtime_pb2.ActionProfileAction()
         msg.action.CopyFrom(self.action.msg())
         msg.weight = self.weight
-        msg.watch = self.watch
+        if self.watch:
+            msg.watch = self.watch
+        if self.watch_port:
+            msg.watch_port = self.watch_port
         return msg
 
     def __str__(self):
@@ -1112,9 +1135,9 @@ You can also access the set of actions with <self>.actions (which is a Python li
                 return True
         return False
 
-    def add(self, action=None, weight=1, watch=0):
+    def add(self, action=None, weight=1, watch=0, watch_port=b""):
         """Add an action to the oneshot action set."""
-        self.actions.append(OneshotAction(action, weight, watch))
+        self.actions.append(OneshotAction(action, weight, watch, watch_port))
         return self
 
     def msg(self):
@@ -1127,7 +1150,7 @@ You can also access the set of actions with <self>.actions (which is a Python li
             action_name = context.get_name_from_id(action.action.action_id)
             a = Action(action_name)
             a._from_msg(action.action)
-            self.actions.append(OneshotAction(a, action.weight, action.watch))
+            self.actions.append(OneshotAction(a, action.weight, action.watch, action.watch_port))
 
     def __str__(self):
         return str(self.msg())
