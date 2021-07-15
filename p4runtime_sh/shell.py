@@ -14,6 +14,7 @@
 #
 
 import argparse
+import time
 from collections import Counter, namedtuple, OrderedDict
 import enum
 import logging
@@ -2410,15 +2411,31 @@ class PacketIn():
         the function to every packet-in message.
         """
         msgs = []
-        while True:
-            try:
-                msgs.append(self.packet_in_queue.get(block=True, timeout=timeout))
-            except queue.Empty:
-                # No item available when timeout.
-                break
-            except KeyboardInterrupt:
-                # User sends an interrupt(e.g., Ctrl+C).
-                break
+
+        if timeout is not None and timeout < 0:
+            raise ValueError("Timeout can't be a negative number.")
+
+        if timeout is None:
+            while True:
+                try:
+                    msgs.append(self.packet_in_queue.get(block=True))
+                except KeyboardInterrupt:
+                    # User sends a Ctrl+C -> breaking
+                    break
+
+        else:  # timeout parameter is provided
+            deadline = time.time() + timeout
+            remaining_time = timeout
+            while remaining_time > 0:
+                try:
+                    msgs.append(self.packet_in_queue.get(block=True, timeout=remaining_time))
+                    remaining_time = deadline - time.time()
+                except KeyboardInterrupt:
+                    # User sends an interrupt(e.g., Ctrl+C).
+                    break
+                except queue.Empty:
+                    # No item available on timeout. Exiting
+                    break
 
         if function is None:
             return iter(msgs)
