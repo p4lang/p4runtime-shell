@@ -5,7 +5,7 @@ project_root = os.path.dirname(os.path.realpath(__file__))
 
 setup(
     name = "p4runtime-shell",
-    version = "0.0.1",
+    version = "0.0.2",
     packages = find_packages("."),
     install_requires = [
         "ipaddr==2.2.0",
