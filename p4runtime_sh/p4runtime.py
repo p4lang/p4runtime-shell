@@ -135,9 +135,10 @@ def parse_p4runtime_error(f):
 
 
 class P4RuntimeClient:
-    def __init__(self, device_id, grpc_addr, election_id):
+    def __init__(self, device_id, grpc_addr, election_id, role_name=None):
         self.device_id = device_id
         self.election_id = election_id
+        self.role_name = role_name
         logging.debug("Connecting to device {} at {}".format(device_id, grpc_addr))
         try:
             self.channel = grpc.insecure_channel(grpc_addr)
@@ -196,6 +197,8 @@ class P4RuntimeClient:
         election_id = arbitration.election_id
         election_id.high = self.election_id[0]
         election_id.low = self.election_id[1]
+        if self.role_name is not None:
+            arbitration.role.name = self.role_name
         self.stream_out_q.put(req)
 
         rep = self.get_stream_packet("arbitration", timeout=2)
@@ -232,6 +235,8 @@ class P4RuntimeClient:
         logging.debug("Setting forwarding pipeline config")
         req = p4runtime_pb2.SetForwardingPipelineConfigRequest()
         req.device_id = self.device_id
+        if self.role_name is not None:
+            req.role = self.role_name
         election_id = req.election_id
         election_id.high = self.election_id[0]
         election_id.low = self.election_id[1]
@@ -261,6 +266,8 @@ class P4RuntimeClient:
     @parse_p4runtime_write_error
     def write(self, req):
         req.device_id = self.device_id
+        if self.role_name is not None:
+            req.role = self.role_name
         election_id = req.election_id
         election_id.high = self.election_id[0]
         election_id.low = self.election_id[1]
@@ -270,6 +277,8 @@ class P4RuntimeClient:
     def write_update(self, update):
         req = p4runtime_pb2.WriteRequest()
         req.device_id = self.device_id
+        if self.role_name is not None:
+            req.role = self.role_name
         election_id = req.election_id
         election_id.high = self.election_id[0]
         election_id.low = self.election_id[1]
@@ -281,6 +290,8 @@ class P4RuntimeClient:
     @parse_p4runtime_error
     def read_one(self, entity):
         req = p4runtime_pb2.ReadRequest()
+        if self.role_name is not None:
+            req.role = self.role_name
         req.device_id = self.device_id
         req.entities.extend([entity])
         return self.stub.Read(req)
