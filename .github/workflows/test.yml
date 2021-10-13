@@ -15,13 +15,6 @@ jobs:
       uses: actions/checkout@v2
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1
-    - name: Cache Docker layers
-      uses: actions/cache@v2
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
     - name: Login to DockerHub if needed
       if: ${{ github.repository == 'p4lang/p4runtime-shell' && github.event_name == 'push' }}
       uses: docker/login-action@v1
@@ -34,8 +27,8 @@ jobs:
         context: .
         load: true
         tags: p4lang/p4runtime-sh
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
     - name: Build and export p4lang/p4runtime-sh-dev to Docker
       uses: docker/build-push-action@v2
       with:
@@ -43,8 +36,10 @@ jobs:
         file: Dockerfile.dev
         load: true
         tags: p4lang/p4runtime-sh-dev
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new
+        cache-from: |
+          p4lang/p4runtime-sh:latest
+          type=gha
+        cache-to: type=gha,mode=max
     - name: Check Python code formatting
       run: docker run p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && flake8 p4runtime_sh config_builders"
     - name: Run unit tests and upload code coverage
@@ -58,8 +53,3 @@ jobs:
         context: .
         push: true
         tags: p4lang/p4runtime-sh
-    # See https://github.com/docker/build-push-action/issues/252
-    - name: Move cache
-      run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
