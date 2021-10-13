@@ -4,12 +4,16 @@ SHELL ["/bin/bash", "-c"]
 
 WORKDIR /p4runtime-sh/
 
-ENV PKG_DEPS git python3-venv
+ENV PKG_DEPS curl git python3-venv
 
 # git is required for codecov
 RUN apt-get update && \
     apt-get install -y --no-install-recommends $PKG_DEPS && \
     rm -rf /var/cache/apt/* /var/lib/apt/lists/*
+
+RUN curl -Os https://uploader.codecov.io/latest/linux/codecov && \
+    chmod +x codecov && \
+    mv codecov /usr/local/bin/
 
 COPY . /p4runtime-sh
 RUN source $VENV/bin/activate && \
