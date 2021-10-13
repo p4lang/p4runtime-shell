@@ -1,0 +1,65 @@
+name: Test
+on:
+  pull_request:
+    branches:
+    - main
+  push:
+    branches:
+    - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # Local registry where we output p4lang/p4runtime-sh so that it can be used
+    # to build p4lang/p4runtime-sh-dev.
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+    - name: Check-out code
+      uses: actions/checkout@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+      with:
+          driver-opts: network=host
+    - name: Login to DockerHub if needed
+      if: ${{ github.repository == 'p4lang/p4runtime-shell' && github.event_name == 'push' }}
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Build and push p4lang/p4runtime-sh to local registry
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        tags: localhost:5000/p4lang/p4runtime-sh
+        push: true
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Build and export p4lang/p4runtime-sh-dev to Docker
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        file: Dockerfile.dev
+        build-args: BASE_IMAGE=localhost:5000/p4lang/p4runtime-sh:latest
+        load: true
+        tags: p4lang/p4runtime-sh-dev
+        cache-from: |
+          type=registry,ref=localhost:5000/p4lang/p4runtime-sh
+          type=gha
+        cache-to: type=gha,mode=max
+    - name: Check Python code formatting
+      run: docker run p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && flake8 p4runtime_sh config_builders"
+    - name: Run unit tests and upload code coverage
+      run: |
+        ci_env=`bash <(curl -s https://codecov.io/env)`
+        docker run $ci_env p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && nose2 --with-coverage p4runtime_sh config_builders && codecov"
+    - name: Build and push p4lang/p4runtime-sh to Dockerhub if needed
+      if: ${{ github.repository == 'p4lang/p4runtime-shell' && github.event_name == 'push' }}
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: p4lang/p4runtime-sh
