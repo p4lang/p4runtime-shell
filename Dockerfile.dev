@@ -1,5 +1,5 @@
-ARG TAG=latest
-FROM p4lang/p4runtime-sh:${TAG}
+ARG BASE_IMAGE=p4lang/p4runtime-sh:latest
+FROM ${BASE_IMAGE}
 
 SHELL ["/bin/bash", "-c"]
 
