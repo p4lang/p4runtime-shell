@@ -2553,6 +2553,9 @@ def get_arg_parser():
                         help='Election id to use',
                         metavar='<Hi>,<Lo>',
                         type=election_id, action='store', default=(1, 0))
+    parser.add_argument('--role-name',
+                        help='Role name of this client',
+                        type=str, action='store')
     parser.add_argument('--config',
                         help='If you want the shell to push a pipeline config to the server first',
                         metavar='<p4info path (text)>,<binary config path>',
@@ -2561,10 +2564,10 @@ def get_arg_parser():
     return parser
 
 
-def setup(device_id=1, grpc_addr='localhost:9559', election_id=(1, 0), config=None):
+def setup(device_id=1, grpc_addr='localhost:9559', election_id=(1, 0), role_name=None, config=None):
     global client
     logging.debug("Creating P4Runtime client")
-    client = P4RuntimeClient(device_id, grpc_addr, election_id)
+    client = P4RuntimeClient(device_id, grpc_addr, election_id, role_name)
 
     if config is not None:
         try:
@@ -2614,7 +2617,7 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
 
-    setup(args.device_id, args.grpc_addr, args.election_id, args.config)
+    setup(args.device_id, args.grpc_addr, args.election_id, args.role_name, args.config)
 
     c = Config()
     c.TerminalInteractiveShell.banner1 = '*** Welcome to the IPython shell for P4Runtime ***'
