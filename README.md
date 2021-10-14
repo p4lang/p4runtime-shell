@@ -1,6 +1,6 @@
 # A shell for P4Runtime
 
-[![Build Status](https://travis-ci.org/p4lang/p4runtime-shell.svg?branch=main)](https://travis-ci.org/p4lang/p4runtime-shell)
+![Build Status](https://github.com/p4lang/p4runtime-shell/workflows/Test/badge.svg?branch=main&event=push)
 
 **This is still a work in progress. Feedback is welcome.**
 
