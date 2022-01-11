@@ -24,7 +24,8 @@ from traitlets.config.loader import Config
 from IPython.terminal.prompts import Prompts, Token
 import os.path
 import sys
-from p4runtime_sh.p4runtime import P4RuntimeClient, P4RuntimeException, parse_p4runtime_error
+from p4runtime_sh.p4runtime import (P4RuntimeClient, P4RuntimeException, parse_p4runtime_error,
+                                    SSLOptions)
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
@@ -2560,14 +2561,32 @@ def get_arg_parser():
                         help='If you want the shell to push a pipeline config to the server first',
                         metavar='<p4info path (text)>,<binary config path>',
                         type=pipe_config, action='store', default=None)
+    parser.add_argument('--ssl',
+                        help='Use secure SSL/TLS gRPC channel to connect to the P4Runtime server',
+                        action='store_true')
+    parser.add_argument('--no-ssl',
+                        help='Use insecure gRPC channel to connect to the P4Runtime server',
+                        action='store_false')
+    # Setting the default to False (insecure) for backwards-compatibility. May
+    # switch it to true in the future.
+    parser.set_defaults(ssl=False)
+    parser.add_argument('--cacert',
+                        help='CA certificate to verify peer against, for secure connections',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
 
     return parser
 
 
-def setup(device_id=1, grpc_addr='localhost:9559', election_id=(1, 0), role_name=None, config=None):
+def setup(device_id=1,
+          grpc_addr='localhost:9559',
+          election_id=(1, 0),
+          role_name=None,
+          config=None,
+          ssl_options=None):
     global client
     logging.debug("Creating P4Runtime client")
-    client = P4RuntimeClient(device_id, grpc_addr, election_id, role_name)
+    client = P4RuntimeClient(device_id, grpc_addr, election_id, role_name, ssl_options)
 
     if config is not None:
         try:
@@ -2616,8 +2635,11 @@ def main():
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
-
-    setup(args.device_id, args.grpc_addr, args.election_id, args.role_name, args.config)
+    if args.cacert and not args.ssl:
+        logging.error("--cacert makes no sense if SSL/TLS is disabled, did you mean to use --ssl?")
+    ssl_options = SSLOptions(not args.ssl, args.cacert)
+    setup(args.device_id, args.grpc_addr, args.election_id, args.role_name, args.config,
+          ssl_options)
 
     c = Config()
     c.TerminalInteractiveShell.banner1 = '*** Welcome to the IPython shell for P4Runtime ***'

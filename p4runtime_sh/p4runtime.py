@@ -21,6 +21,7 @@ import logging
 import queue
 import sys
 import threading
+from typing import NamedTuple
 
 from p4.v1 import p4runtime_pb2
 from p4.v1 import p4runtime_pb2_grpc
@@ -134,17 +135,46 @@ def parse_p4runtime_error(f):
     return handle
 
 
+class SSLOptions(NamedTuple):
+    insecure: bool
+    cacert: str = None
+
+
 class P4RuntimeClient:
-    def __init__(self, device_id, grpc_addr, election_id, role_name=None):
+    def __init__(self, device_id, grpc_addr, election_id, role_name=None, ssl_options=None):
         self.device_id = device_id
         self.election_id = election_id
         self.role_name = role_name
+        if ssl_options is None:
+            self.ssl_options = SSLOptions(True)
+        else:
+            self.ssl_options = ssl_options
         logging.debug("Connecting to device {} at {}".format(device_id, grpc_addr))
-        try:
-            self.channel = grpc.insecure_channel(grpc_addr)
-        except Exception:
-            logging.critical("Failed to connect to P4Runtime server")
-            sys.exit(1)
+        if self.ssl_options.insecure:
+            try:
+                logging.debug("Using insecure channel")
+                self.channel = grpc.insecure_channel(grpc_addr)
+            except Exception:
+                logging.critical("Failed to connect to P4Runtime server")
+                sys.exit(1)
+        else:
+            if self.ssl_options.cacert is None:
+                # root certificates are retrieved from a default location chosen by gRPC runtime
+                creds = grpc.ssl_channel_credentials()
+            else:
+                try:
+                    with open(self.ssl_options.cacert, 'rb') as f:
+                        creds = grpc.ssl_channel_credentials(f.read())
+                except Exception:
+                    logging.critical("Cannot read from CA certificate file '{}'".format(
+                        self.ssl_options.cacert))
+                    sys.exit(1)
+            try:
+                self.channel = grpc.secure_channel(grpc_addr, creds)
+            except Exception:
+                logging.critical("Failed to connect to P4Runtime server")
+                sys.exit(1)
+
         self.stub = p4runtime_pb2_grpc.P4RuntimeStub(self.channel)
         self.set_up_stream()
 

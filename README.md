@@ -317,7 +317,7 @@ P4Runtime sh >>>
 ## Using p4runtime-shell in scripts
 
 You can also leverage this project as a convenient P4Runtime wrapper to
-programmatically program switches using Pyhton scripts:
+programmatically program switches using Python scripts:
 
 ```python
 import p4runtime_sh.shell as sh
