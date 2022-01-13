@@ -53,6 +53,10 @@ def main():
     parser.add_argument('--mounts',
                         help='Additonal mounts for the Docker container (same as docker run)',
                         type=str, action='append', metavar='mount', default=[])
+    parser.add_argument('--cacert',
+                        help='CA certificate to verify peer against, for secure connections',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
     args, unknown_args = parser.parse_known_args()
 
     docker_args = []
@@ -62,28 +66,39 @@ def main():
         logging.basicConfig(level=logging.DEBUG)
         new_args.append('--verbose')
 
-    if args.config is not None:
-        if not os.path.isfile(args.config.p4info):
-            logging.critical("'{}' is not a valid file".format(args.config.p4info))
-            sys.exit(1)
-        if not os.path.isfile(args.config.bin):
-            logging.critical("'{}' is not a valid file".format(args.config.bin))
-            sys.exit(1)
+    files_to_mount = []
+    mount_path = "/p4rt_data"
 
-        mount_path = "/fwd_pipe_config"
+    if args.config is not None:
         fname_p4info = "p4info.pb.txt"
         fname_bin = "config.bin"
+        files_to_mount += [(fname_p4info, args.config.p4info)]
+        files_to_mount += [(fname_bin, args.config.bin)]
+        new_args.extend(["--config", "{},{}".format(
+            os.path.join(mount_path, fname_p4info), os.path.join(mount_path, fname_bin))])
 
-        tmpdir = tempfile.mkdtemp(dir="/tmp")
+    if args.cacert is not None:
+        fname_cacert = "cacert.pem"
+        files_to_mount += [(fname_cacert, args.cacert)]
+        new_args.extend(["--cacert", os.path.join(mount_path, fname_cacert)])
+
+    for f in files_to_mount:
+        path = f[1]
+        if not os.path.isfile(path):
+            logging.critical("'{}' is not a valid file".format(path))
+            sys.exit(1)
+
+    tmpdir = None
+    if len(files_to_mount) > 0:
         logging.debug(
             "Created temporary directory '{}', it will be mounted in the docker as '{}'".format(
                 tmpdir, mount_path))
-        shutil.copy(args.config.p4info, os.path.join(tmpdir, fname_p4info))
-        shutil.copy(args.config.bin, os.path.join(tmpdir, fname_bin))
-
+        tmpdir = tempfile.mkdtemp(dir="/tmp")
         docker_args.extend(["-v", "{}:{}".format(tmpdir, mount_path)])
-        new_args.extend(["--config", "{},{}".format(
-            os.path.join(mount_path, fname_p4info), os.path.join(mount_path, fname_bin))])
+
+    for f in files_to_mount:
+        fname, path = f
+        shutil.copy(path, os.path.join(tmpdir, fname))
 
     for volume in args.volumes:
         docker_args.extend(["-v", volume])
@@ -99,7 +114,7 @@ def main():
 
     subprocess.run(cmd)
 
-    if args.config is not None:
+    if tmpdir is not None:
         logging.debug("Cleaning up...")
         try:
             shutil.rmtree(tmpdir)
