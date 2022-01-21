@@ -10,7 +10,7 @@ setup(
     install_requires = [
         "ipaddr==2.2.0",
         "jedi==0.17.2",
-        "ipython==7.19.0",
+        "ipython==7.31.1",
         "protobuf==3.14.0",
         "grpcio==1.35.0",
         "p4runtime==1.3.0",
