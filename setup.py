@@ -7,10 +7,12 @@ setup(
     name = "p4runtime-shell",
     version = "0.0.2",
     packages = find_packages("."),
+    python_requires='>=3.6',
     install_requires = [
         "ipaddr==2.2.0",
         "jedi==0.17.2",
-        "ipython==7.19.0",
+        "ipython>=7.31.1,==7.31.*;python_version>='3.7'",
+        "ipython>=7.16.3,==7.16.*;python_version<'3.7'",
         "protobuf==3.14.0",
         "grpcio==1.35.0",
         "p4runtime==1.3.0",
