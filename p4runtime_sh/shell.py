@@ -2574,6 +2574,14 @@ def get_arg_parser():
                         help='CA certificate to verify peer against, for secure connections',
                         metavar='<path to .pem>',
                         type=str, action='store', default=None)
+    parser.add_argument('--cert',
+                        help='Path to client certificate, for mutual authentication',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
+    parser.add_argument('--private-key',
+                        help='Path to client private key, for mutual authentication',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
 
     return parser
 
@@ -2636,8 +2644,15 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
     if args.cacert and not args.ssl:
-        logging.error("--cacert makes no sense if SSL/TLS is disabled, did you mean to use --ssl?")
-    ssl_options = SSLOptions(not args.ssl, args.cacert)
+        logging.error(
+            "--cacert makes no sense if SSL/TLS is disabled, did you mean to use --ssl?")
+    if args.cert and not args.ssl:
+        logging.error(
+            "--cert makes no sense if SSL/TLS is disabled, did you mean to use --ssl?")
+    if args.private_key and not args.ssl:
+        logging.error(
+            "--private-key makes no sense if SSL/TLS is disabled, did you mean to use --ssl?")
+    ssl_options = SSLOptions(not args.ssl, args.cacert, args.cert, args.private_key)
     setup(args.device_id, args.grpc_addr, args.election_id, args.role_name, args.config,
           ssl_options)
 

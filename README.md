@@ -368,3 +368,109 @@ You can then use `out.bin` when invoking `p4runtime-sh-docker`:
   --device-id 0 --election-id 0,1 \
   --config <path to p4info>,out.bin
 ```
+
+## TLS Authentication
+
+By default, the shell opens an insecure gRPC channel to the P4Runtime
+server. This will only work if the P4Runtime server is itself insecure and does
+not use TLS. Note that by default, bmv2 simple_switch_grpc uses an insecure
+server and no TLS configuration is required for the shell. For general
+information about authentication and encryption with gRPC, please refer to the
+[documentation](https://grpc.io/docs/guides/auth/).
+
+If you are connecting to a P4Runtime server which is secured with TLS, please
+keep reading.
+
+### Server Authentication
+
+You will need to enable TLS in the shell by starting it with `--ssl`. If you are
+using a self-signed certificate for the P4Runtime server, you must also provide
+a CA certificate with `--cacert`.
+
+```bash
+[sudo] ./p4runtime-sh-docker --grpc-addr <server address>:9559 \
+  --device-id 0 --election-id 0,1 --config /tmp/p4info.txt,/tmp/bmv2.json \
+  --ssl [--cacert <path to PEM certificate>].
+```
+
+The `<server address>` needs to match the Common Name (CN) or one of the Subject
+Alternative Names (SAN) in the server certificate. In some cases, a matching SAN
+is required (the Common Name is considered deprecated).
+
+### Mutual Authentication (with client certificate)
+
+If the P4Runtime server requires clients to present a certificate for client
+authentication, you will need to provide the appropriate certificate with
+`--cert` and the appropriate private key with `--private-key`.
+
+```bash
+[sudo] ./p4runtime-sh-docker --grpc-addr <server address>:9559 \
+  --device-id 0 --election-id 0,1 --config /tmp/p4info.txt,/tmp/bmv2.json \
+  --ssl \
+  --cacert <path to PEM certificate for server verification> \
+  --cert <path to PEM client certificate> \
+  --private-key <path to PEM client private key>
+```
+
+Note that the appropriate CA certificate (the one used to sign the client
+certificate) needs to be provided to the P4Runtime server. How to do that will
+be dependent on the P4Runtime implementation.
+
+Make sure that the private key file is not password-protected or gRPC client
+initialization will fail.
+
+### A Mutual Authentication example with bmv2 and self-signed certificates
+
+In this example, we will use the same CA for both server and client certificates
+but this is of course not a requirement. Make sure you are using recent versions
+of PI, bmv2 and p4runtime-shell for this to work.
+
+```bash
+password=abcd
+
+# Generate CA
+openssl genrsa -passout pass:$password -des3 -out ca.key 4096
+openssl req -passin pass:$password -new -x509 -days 365 -key ca.key -out ca.crt \
+  -subj "/C=US/ST=CA/L=PaloAlto/O=Test/OU=Test/CN=Root CA"
+
+# Generate server certificate and key
+openssl genrsa -passout pass:$password -des3 -out server.key 4096
+openssl req -passin pass:$password -new -key server.key -out server.csr \
+  -subj "/C=US/ST=CA/L=PaloAlto/O=Test/OU=Server/CN=localhost"
+openssl x509 -req -passin pass:$password \
+  -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1") \
+  -days 365 -in server.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out server.crt
+
+# Remove passphrase from the server key
+openssl rsa -passin pass:$password -in server.key -out server.key
+
+# Generate client certificate and key
+openssl genrsa -passout pass:$password -des3 -out client.key 4096
+openssl req -passin pass:$password -new -key client.key -out client.csr -subj "/C=US/ST=CA/L=PaloAlto/O=Test/OU=Client/CN=p4runtime-sh"
+openssl x509 -passin pass:$password -req -days 365 -in client.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out client.crt
+
+# Remove passphrase from the client key
+openssl rsa -passin pass:$password -in client.key -out client.key
+```
+
+To run simple_switch_grpc:
+
+```bash
+simple_switch_grpc --log-console --no-p4 --device-id 1 -- \
+  --grpc-server-ssl --grpc-server-cacert ca.crt \
+  --grpc-server-cert server.crt --grpc-server-key server.key \
+  --grpc-server-with-client-auth
+```
+
+To run the shell:
+
+```bash
+python3 -m p4runtime_sh --grpc-addr localhost:9559 --device-id 1 \
+  --config meter.proto.txt,meter.json \
+  --ssl --cacert ca.crt --cert client.crt --private-key client.key
+```
+
+Note that we do not use `p4runtime-sh-docker` in this example. This is because
+if we run the shell inside a Docker container, we will not be able to connect to
+the P4Runtime server using `localhost` at the address, and this is the name we
+used to issue the server certificate.

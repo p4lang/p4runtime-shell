@@ -57,6 +57,14 @@ def main():
                         help='CA certificate to verify peer against, for secure connections',
                         metavar='<path to .pem>',
                         type=str, action='store', default=None)
+    parser.add_argument('--cert',
+                        help='Path to client certificate, for mutual authentication',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
+    parser.add_argument('--private-key',
+                        help='Path to client private key, for mutual authentication',
+                        metavar='<path to .pem>',
+                        type=str, action='store', default=None)
     args, unknown_args = parser.parse_known_args()
 
     docker_args = []
@@ -81,6 +89,16 @@ def main():
         fname_cacert = "cacert.pem"
         files_to_mount += [(fname_cacert, args.cacert)]
         new_args.extend(["--cacert", os.path.join(mount_path, fname_cacert)])
+
+    if args.cert is not None:
+        fname_cert = "cert.pem"
+        files_to_mount += [(fname_cert, args.cert)]
+        new_args.extend(["--cert", os.path.join(mount_path, fname_cert)])
+
+    if args.private_key is not None:
+        fname_private_key = "key.pem"
+        files_to_mount += [(fname_private_key, args.private_key)]
+        new_args.extend(["--private-key", os.path.join(mount_path, fname_private_key)])
 
     for f in files_to_mount:
         path = f[1]

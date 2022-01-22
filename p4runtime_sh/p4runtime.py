@@ -138,6 +138,17 @@ def parse_p4runtime_error(f):
 class SSLOptions(NamedTuple):
     insecure: bool
     cacert: str = None
+    cert: str = None
+    key: str = None
+
+
+def read_pem_file(path):
+    try:
+        with open(path, 'rb') as f:
+            return f.read()
+    except Exception:
+        logging.critical("Cannot read from PEM file '{}'".format(path))
+        sys.exit(1)
 
 
 class P4RuntimeClient:
@@ -158,17 +169,18 @@ class P4RuntimeClient:
                 logging.critical("Failed to connect to P4Runtime server")
                 sys.exit(1)
         else:
-            if self.ssl_options.cacert is None:
-                # root certificates are retrieved from a default location chosen by gRPC runtime
-                creds = grpc.ssl_channel_credentials()
-            else:
-                try:
-                    with open(self.ssl_options.cacert, 'rb') as f:
-                        creds = grpc.ssl_channel_credentials(f.read())
-                except Exception:
-                    logging.critical("Cannot read from CA certificate file '{}'".format(
-                        self.ssl_options.cacert))
-                    sys.exit(1)
+            # root certificates are retrieved from a default location chosen by gRPC runtime unless
+            # the user provides custom certificates.
+            root_certificates = None
+            if self.ssl_options.cacert is not None:
+                root_certificates = read_pem_file(self.ssl_options.cacert)
+            certificate_chain = None
+            if self.ssl_options.cert is not None:
+                certificate_chain = read_pem_file(self.ssl_options.cert)
+            private_key = None
+            if self.ssl_options.key is not None:
+                private_key = read_pem_file(self.ssl_options.key)
+            creds = grpc.ssl_channel_credentials(root_certificates, private_key, certificate_chain)
             try:
                 self.channel = grpc.secure_channel(grpc_addr, creds)
             except Exception:
