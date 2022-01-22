@@ -8,6 +8,24 @@ p4runtime-sh is an interactive Python shell for
 [P4Runtime](https://github.com/p4lang/p4runtime) based on
 [IPython](https://ipython.org/).
 
+<!--ts-->
+* [A shell for P4Runtime](#a-shell-for-p4runtime)
+   * [Using the shell](#using-the-shell)
+      * [Run with Docker](#run-with-docker)
+      * [Run without Docker](#run-without-docker)
+   * [Available commands](#available-commands)
+   * [Canonical representation of bytestrings](#canonical-representation-of-bytestrings)
+   * [Example usage](#example-usage)
+   * [Using p4runtime-shell in scripts](#using-p4runtime-shell-in-scripts)
+   * [Target-specific support](#target-specific-support)
+      * [P4.org Bmv2](#p4org-bmv2)
+      * [Barefoot Tofino](#barefoot-tofino)
+   * [TLS Authentication](#tls-authentication)
+      * [Server Authentication](#server-authentication)
+      * [Mutual Authentication (with client certificate)](#mutual-authentication-with-client-certificate)
+      * [A Mutual Authentication example with bmv2 and self-signed certificates](#a-mutual-authentication-example-with-bmv2-and-self-signed-certificates)
+<!--te-->
+
 ## Using the shell
 
 ### Run with Docker
