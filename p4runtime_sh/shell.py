@@ -2219,8 +2219,7 @@ Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instan
             self.add(r.egress_port, r.instance)
 
     def read(self, function=None):
-        """Generate a P4Runtime Read RPC to read a single MulticastGroupEntry
-        (wildcard reads not supported).
+        """Generate a P4Runtime Read RPC to read MulticastGroupEntry.
         If function is None, return a MulticastGroupEntry instance (or None if
         the provided group id does not exist). If function is not None, function
         is applied to the MulticastGroupEntry instance (if any).
@@ -2240,14 +2239,17 @@ Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instan
         self._entry = entry
 
     def _validate_msg(self):
-        if self.group_id == 0:
-            raise UserError("0 is not a valid group_id for MulticastGroupEntry")
+        return True
 
     def add(self, egress_port=None, instance=0):
         """Add a replica to the multicast group."""
         self.replicas.append(Replica(egress_port, instance))
         return self
 
+    def _write(self, type_):
+        if self.group_id == 0:
+            raise UserError("0 is not a valid group_id for MulticastGroupEntry")
+        super()._write(type_)
 
 class CloneSessionEntry(_EntityBase):
     def __init__(self, session_id=0):
