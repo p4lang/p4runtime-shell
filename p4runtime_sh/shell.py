@@ -1333,6 +1333,7 @@ class TableEntry(_P4EntityBase):
                 self._direct_meter = context.get_obj_by_id(res_id)
         self._counter_data = None
         self._meter_config = None
+        self.idle_timeout_ns = 0
         self.metadata = b""
         self.__doc__ = """
 An entry for table '{}'
@@ -1371,6 +1372,8 @@ Or access the group_id with <self>.group_id.
 To set the priority, use <self>.priority = <expr>.
 
 To mark the entry as default, use <self>.is_default = True.
+
+To add an idle timeout to the entry, use <self>.idle_timeout_ns = <expr>.
 
 To add metadata to the entry, use <self>.metadata = <expr>.
 """
@@ -1414,7 +1417,7 @@ For information about how to read table entries, use <self>.read?
 
     def __dir__(self):
         d = super().__dir__() + [
-            "match", "priority", "is_default", "metadata",
+            "match", "priority", "is_default", "idle_timeout_ns", "metadata",
             "clear_action", "clear_match", "clear_counter_data", "clear_meter_config"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
@@ -1543,6 +1546,9 @@ For information about how to read table entries, use <self>.read?
                 self._meter_config = None
                 return
             raise UserError("Cannot set 'meter_config' directly")
+        elif name == "idle_timeout_ns":
+            if type(value) is not int:
+                raise UserError("idle_timeout_ns must be an integer")
         elif name == "metadata":
             if type(value) is not bytes:
                 raise UserError("metadata must be a byte string")
@@ -1584,6 +1590,7 @@ For information about how to read table entries, use <self>.read?
     def _from_msg(self, msg):
         self.priority = msg.priority
         self.is_default = msg.is_default_action
+        self.idle_timeout_ns = msg.idle_timeout_ns
         self.metadata = msg.metadata
         for mf in msg.match:
             mf_name = context.get_mf_name(self.name, mf.field_id)
@@ -1637,6 +1644,7 @@ For information about how to read table entries, use <self>.read?
         entry.match.extend(self.match._mk.values())
         entry.priority = self.priority
         entry.is_default_action = self.is_default
+        entry.idle_timeout_ns = self.idle_timeout_ns
         entry.metadata = self.metadata
         if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
             entry.action.action.CopyFrom(self._action_spec.msg())
