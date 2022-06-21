@@ -1784,6 +1784,7 @@ For information about how to read table entries, use <self>.read?
         """Clear the idle timeout, same as <self>.time_since_last_hit = None"""
         self._time_since_last_hit = None
 
+
 class _CounterEntryBase(_P4EntityBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2861,7 +2862,7 @@ def main():
     user_ns["clone_session_entry"] = CloneSessionEntry
     user_ns["packet_in"] = PacketIn()  # Singleton packet_in object to handle all packet-in cases
     user_ns["packet_out"] = PacketOut
-    user_ns["idle_timeout_notification"] = IdleTimeoutNotification() # Singleton
+    user_ns["idle_timeout_notification"] = IdleTimeoutNotification()  # Singleton
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
