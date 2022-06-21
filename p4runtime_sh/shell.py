@@ -1289,6 +1289,64 @@ class _MeterConfig:
         return d, r
 
 
+class _IdleTimeout:
+    @staticmethod
+    def attrs():
+        return ["elapsed_ns"]
+
+    def __init__(self):
+        self._msg = p4runtime_pb2.TableEntry.IdleTimeout()
+        self._attrs = _IdleTimeout.attrs()
+
+    def __dir__(self):
+        return self._attrs
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        if name in self._attrs:
+            if type(value) is not int:
+                raise UserError("{} must be an integer".format(name))
+        setattr(self._msg, name, value)
+
+    def __getattr__(self, name):
+        if name in self._attrs:
+            return getattr(self._msg, name)
+        raise AttributeError("'{}' object has no attribute '{}'".format(
+            self.__class__.__name__, name))
+
+    def msg(self):
+        return self._msg
+
+    def _from_msg(self, msg):
+        self._msg.CopyFrom(msg)
+
+    def __str__(self):
+        return str(self.msg())
+
+    def _repr_pretty_(self, p, cycle):
+        p.text(str(self.msg()))
+
+    @classmethod
+    def set_param(cls, instance, name, value):
+        if instance is None:
+            d = cls()
+        else:
+            d = instance
+        setattr(d, name, value)
+        return d
+
+    @classmethod
+    def get_param(cls, instance, name):
+        if instance is None:
+            d = cls()
+        else:
+            d = instance
+        r = getattr(d, name)
+        return d, r
+
+
 class TableEntry(_P4EntityBase):
     @enum.unique
     class _ActionSpecType(enum.Enum):
@@ -1333,6 +1391,12 @@ class TableEntry(_P4EntityBase):
                 self._direct_meter = context.get_obj_by_id(res_id)
         self._counter_data = None
         self._meter_config = None
+        self.idle_timeout_ns = 0
+        self._time_since_last_hit = None
+        self._idle_timeout_behavior = None
+        table = context.get_table(table_name)
+        if table.idle_timeout_behavior > 0:
+            self._idle_timeout_behavior = table.idle_timeout_behavior
         self.metadata = b""
         self.__doc__ = """
 An entry for table '{}'
@@ -1367,10 +1431,17 @@ Access the member_id with <self>.member_id.
             self.__doc__ += """
 Or access the group_id with <self>.group_id.
 """
+        if self._idle_timeout_behavior is not None:
+            self.__doc__ += """
+To access the time this entry was last hit, use <self>.time_since_last_hit.elapsed_ns.
+To unset it, use <self>.time_since_last_hit = None or <self>.clear_time_since_last_hit().
+"""
         self.__doc__ += """
 To set the priority, use <self>.priority = <expr>.
 
 To mark the entry as default, use <self>.is_default = True.
+
+To add an idle timeout to the entry, use <self>.idle_timeout_ns = <expr>.
 
 To add metadata to the entry, use <self>.metadata = <expr>.
 """
@@ -1414,8 +1485,9 @@ For information about how to read table entries, use <self>.read?
 
     def __dir__(self):
         d = super().__dir__() + [
-            "match", "priority", "is_default", "metadata",
-            "clear_action", "clear_match", "clear_counter_data", "clear_meter_config"]
+            "match", "priority", "is_default", "idle_timeout_ns", "metadata",
+            "clear_action", "clear_match", "clear_counter_data", "clear_meter_config",
+            "clear_time_since_last_hit"]
         if self._support_groups:
             d.extend(["member_id", "group_id", "oneshot"])
         elif self._support_members:
@@ -1426,6 +1498,8 @@ For information about how to read table entries, use <self>.read?
             d.append("counter_data")
         if self._direct_meter is not None:
             d.append("meter_config")
+        if self._idle_timeout_behavior is not None:
+            d.append("time_since_last_hit")
         return d
 
     def __call__(self, **kwargs):
@@ -1543,6 +1617,16 @@ For information about how to read table entries, use <self>.read?
                 self._meter_config = None
                 return
             raise UserError("Cannot set 'meter_config' directly")
+        elif name == "idle_timeout_ns":
+            if type(value) is not int:
+                raise UserError("idle_timeout_ns must be an integer")
+        elif name == "time_since_last_hit":
+            if self._idle_timeout_behavior is None:
+                raise UserError("Table has no idle timeouts")
+            if value is None:
+                self._time_since_last_hit = None
+                return
+            raise UserError("Cannot set 'time_since_last_hit' directly")
         elif name == "metadata":
             if type(value) is not bytes:
                 raise UserError("metadata must be a byte string")
@@ -1563,6 +1647,12 @@ For information about how to read table entries, use <self>.read?
                 self._meter_config = _MeterConfig(
                     self._direct_meter.preamble.name, self._direct_meter.spec.unit)
             return self._meter_config
+        if name == "time_since_last_hit":
+            if self._idle_timeout_behavior is None:
+                raise UserError("Table has no idle timeouts")
+            if self._time_since_last_hit is None:
+                self._time_since_last_hit = _IdleTimeout()
+            return self._time_since_last_hit
 
         t = self._action_spec_name_to_type(name)
         if t is None:
@@ -1584,6 +1674,7 @@ For information about how to read table entries, use <self>.read?
     def _from_msg(self, msg):
         self.priority = msg.priority
         self.is_default = msg.is_default_action
+        self.idle_timeout_ns = msg.idle_timeout_ns
         self.metadata = msg.metadata
         for mf in msg.match:
             mf_name = context.get_mf_name(self.name, mf.field_id)
@@ -1612,6 +1703,11 @@ For information about how to read table entries, use <self>.read?
             self._meter_config._from_msg(msg.meter_config)
         else:
             self._meter_config = None
+        if msg.HasField("time_since_last_hit"):
+            self._time_since_last_hit = _IdleTimeout()
+            self._time_since_last_hit._from_msg(msg.time_since_last_hit)
+        else:
+            self._time_since_last_hit = None
 
     def read(self, function=None):
         """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
@@ -1637,6 +1733,7 @@ For information about how to read table entries, use <self>.read?
         entry.match.extend(self.match._mk.values())
         entry.priority = self.priority
         entry.is_default_action = self.is_default
+        entry.idle_timeout_ns = self.idle_timeout_ns
         entry.metadata = self.metadata
         if self._action_spec_type == self._ActionSpecType.DIRECT_ACTION:
             entry.action.action.CopyFrom(self._action_spec.msg())
@@ -1654,6 +1751,10 @@ For information about how to read table entries, use <self>.read?
             entry.ClearField('meter_config')
         else:
             entry.meter_config.CopyFrom(self._meter_config.msg())
+        if self._time_since_last_hit is None:
+            entry.ClearField("time_since_last_hit")
+        else:
+            entry.time_since_last_hit.CopyFrom(self._time_since_last_hit.msg())
         self._entry = entry
 
     def _validate_msg(self):
@@ -1678,6 +1779,10 @@ For information about how to read table entries, use <self>.read?
     def clear_meter_config(self):
         """Clear the meter config, same as <self>.meter_config = None"""
         self._meter_config = None
+
+    def clear_time_since_last_hit(self):
+        """Clear the idle timeout, same as <self>.time_since_last_hit = None"""
+        self._time_since_last_hit = None
 
 
 class _CounterEntryBase(_P4EntityBase):
@@ -2485,6 +2590,60 @@ class PacketOut:
         client.stream_out_q.put(msg)
 
 
+class IdleTimeoutNotification():
+    def __init__(self):
+        self.notification_queue = queue.Queue()
+
+        def _notification_recv_func(notification_queue):
+            while True:
+                msg = client.get_stream_packet("idle_timeout_notification", timeout=None)
+                if not msg:
+                    break
+                notification_queue.put(msg)
+
+        self.recv_t = Thread(target=_notification_recv_func, args=(self.notification_queue, ))
+        self.recv_t.start()
+
+    def sniff(self, function=None, timeout=None):
+        """
+        Return an iterator of notification messages.
+        If the function is provided, we do not return an iterator and instead we apply
+        the function to every notification message.
+        """
+        msgs = []
+
+        if timeout is not None and timeout < 0:
+            raise ValueError("Timeout can't be a negative number.")
+
+        if timeout is None:
+            while True:
+                try:
+                    msgs.append(self.notification_queue.get(block=True))
+                except KeyboardInterrupt:
+                    # User sends a Ctrl+C -> breaking
+                    break
+
+        else:  # timeout parameter is provided
+            deadline = time.time() + timeout
+            remaining_time = timeout
+            while remaining_time > 0:
+                try:
+                    msgs.append(self.notification_queue.get(block=True, timeout=remaining_time))
+                    remaining_time = deadline - time.time()
+                except KeyboardInterrupt:
+                    # User sends an interrupt(e.g., Ctrl+C).
+                    break
+                except queue.Empty:
+                    # No item available on timeout. Exiting
+                    break
+
+        if function is None:
+            return iter(msgs)
+        else:
+            for msg in msgs:
+                function(msg)
+
+
 def Write(input_):
     """
     Reads a WriteRequest from a file (text format) and sends it to the server.
@@ -2703,6 +2862,7 @@ def main():
     user_ns["clone_session_entry"] = CloneSessionEntry
     user_ns["packet_in"] = PacketIn()  # Singleton packet_in object to handle all packet-in cases
     user_ns["packet_out"] = PacketOut
+    user_ns["idle_timeout_notification"] = IdleTimeoutNotification()  # Singleton
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 

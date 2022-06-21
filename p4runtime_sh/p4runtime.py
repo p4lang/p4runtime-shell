@@ -197,6 +197,7 @@ class P4RuntimeClient:
             "arbitration": queue.Queue(),
             "packet": queue.Queue(),
             "digest": queue.Queue(),
+            "idle_timeout_notification": queue.Queue(),
             "unknown": queue.Queue(),
         }
 
