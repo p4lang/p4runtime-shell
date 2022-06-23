@@ -2219,15 +2219,20 @@ Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instan
             self.add(r.egress_port, r.instance)
 
     def read(self, function=None):
-        """Generate a P4Runtime Read RPC to read MulticastGroupEntry.
-        If function is None, return a MulticastGroupEntry instance (or None if
-        the provided group id does not exist). If function is not None, function
-        is applied to the MulticastGroupEntry instance (if any).
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the group_id as 0).
+        If function is None, returns an iterator. Iterate over it to get all the
+        multicast group entries (MulticastGroupEntry instances) returned by the
+        server. Otherwise, function is applied to all the multicast group entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
         """
-        if function is None:
-            return next(super().read())
-        else:
-            super().read(function)
+        return super().read(function)
 
     def _update_msg(self):
         entry = p4runtime_pb2.PacketReplicationEngineEntry()
@@ -2237,9 +2242,6 @@ Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instan
             r = mcg_entry.replicas.add()
             r.CopyFrom(replica._msg)
         self._entry = entry
-
-    def _validate_msg(self):
-        return True
 
     def add(self, egress_port=None, instance=0):
         """Add a replica to the multicast group."""
@@ -2302,16 +2304,20 @@ Access truncation length with <self>.packet_length_bytes.
         self.packet_length_bytes = msg.clone_session_entry.packet_length_bytes
 
     def read(self, function=None):
-        """Generate a P4Runtime Read RPC to read a single CloneSessionEntry
-        (wildcard reads not supported).
-        If function is None, return a CloneSessionEntry instance (or None if
-        the provided group id does not exist). If function is not None, function
-        is applied to the CloneSessionEntry instance (if any).
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the session_id as 0).
+        If function is None, returns an iterator. Iterate over it to get all the
+        clone session entries (CloneSessionEntry instances) returned by the
+        server. Otherwise, function is applied to all the clone session entries
+        returned by the server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
         """
-        if function is None:
-            return next(super().read())
-        else:
-            super().read(function)
+        return super().read(function)
 
     def _update_msg(self):
         entry = p4runtime_pb2.PacketReplicationEngineEntry()
@@ -2328,6 +2334,11 @@ Access truncation length with <self>.packet_length_bytes.
         """Add a replica to the clone session."""
         self.replicas.append(Replica(egress_port, instance))
         return self
+
+    def _write(self, type_):
+        if self.session_id == 0:
+            raise UserError("0 is not a valid group_id for CloneSessionEntry")
+        super()._write(type_)
 
 
 class PacketMetadata:
