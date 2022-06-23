@@ -2251,6 +2251,7 @@ Add replicas with <self>.add(<eg_port_1>, <instance_1>).add(<eg_port_2>, <instan
             raise UserError("0 is not a valid group_id for MulticastGroupEntry")
         super()._write(type_)
 
+
 class CloneSessionEntry(_EntityBase):
     def __init__(self, session_id=0):
         super().__init__(
