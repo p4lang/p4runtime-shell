@@ -1066,8 +1066,7 @@ multicast_group_entry {
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
         self.simple_read_check(
-            expected_req.updates[0].entity, mcge, P4RuntimeEntity.packet_replication_engine_entry,
-            expect_iterator=False)
+            expected_req.updates[0].entity, mcge, P4RuntimeEntity.packet_replication_engine_entry)
 
     def test_multicast_group_entry_invalid(self):
         mcge = sh.MulticastGroupEntry()
@@ -1106,8 +1105,7 @@ clone_session_entry {
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
         self.simple_read_check(
-            expected_req.updates[0].entity, cse, P4RuntimeEntity.packet_replication_engine_entry,
-            expect_iterator=False)
+            expected_req.updates[0].entity, cse, P4RuntimeEntity.packet_replication_engine_entry)
 
     def test_p4runtime_api_version(self):
         version = sh.APIVersion()
