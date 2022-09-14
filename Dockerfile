@@ -1,7 +1,7 @@
-FROM ubuntu:20.04 AS deps
+FROM ubuntu:22.04 AS deps
 
 SHELL ["/bin/bash", "-c"]
-ENV PKG_DEPS python3 python3-venv
+ENV PKG_DEPS python3 python3-venv git
 ENV VENV /p4runtime-sh/venv
 
 RUN apt-get update && \
@@ -15,11 +15,12 @@ RUN python3 -m venv $VENV && \
     source $VENV/bin/activate && \
     pip3 install --upgrade pip && \
     pip3 install --upgrade setuptools && \
-    python3 setup.py install && \
+    pip3 install --upgrade wheel && \
+    pip3 install . && \
     rm -rf ~/.cache/pip
 
-FROM ubuntu:20.04
-LABEL maintainer="Antonin Bas <antonin@barefootnetworks.com>"
+FROM ubuntu:22.04
+LABEL maintainer="P4 Developers <p4-dev@lists.p4.org>"
 LABEL description="A shell based on ipython3 for P4Runtime"
 
 # Any easy way to avoid installing these packages again?
