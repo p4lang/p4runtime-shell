@@ -2446,6 +2446,99 @@ Access truncation length with <self>.packet_length_bytes.
         super()._write(type_)
 
 
+class DigestEntry(_P4EntityBase):
+    def __init__(self, digest_name=None):
+        super().__init__(
+            P4Type.digest, P4RuntimeEntity.digest_entry,
+            p4runtime_pb2.DigestEntry, digest_name)
+        self.max_timeout_ns = 0
+        self.max_list_size = 0
+        self.ack_timeout_ns = 0
+        self.__doc__ = """
+Digest entry for digest '{}'.
+Create an instance with digest_entry(<digest>).
+
+Use <self>.info to display the P4Info entry for this digest.
+""".format(digest_name)
+        self._init = True
+
+    def __dir__(self):
+        return super().__dir__() + [
+            "digest_id", "max_timeout_ns", "max_list_size", "ack_timeout_ns"]
+
+    def __setattr__(self, name, value):
+        if name[0] == "_":
+            super().__setattr__(name, value)
+            return
+        elif name == "digest_id":
+            if type(value) is not int:
+                raise UserError("digest_id must be an integer")
+        elif name == "max_timeout_ns":
+            if type(value) is not int:
+                raise UserError("max_timeout_ns must be an integer")
+        elif name == "max_list_size":
+            if type(value) is not int:
+                raise UserError("max_list_size must be an integer")
+        elif name == "ack_timeout_ns":
+            if type(value) is not int:
+                raise UserError("ack_timeout_ns must be an integer")
+        super().__setattr__(name, value)
+
+    def __getattr__(self, name):
+        if name == "digest_id":
+            return self.id
+        if name == "max_timeout_ns":
+            return self.max_timeout_ns
+        if name == "max_list_size":
+            return self.max_list_size
+        if name == "ack_timeout_ns":
+            return self.ack_timeout_ns
+        return super().__getattr__(name)
+
+    def _from_msg(self, msg):
+        self.id = msg.digest_id
+        self.max_timeout_ns = msg.config.max_timeout_ns
+        self.max_list_size = msg.config.max_list_size
+        self.ack_timeout_ns = msg.config.ack_timeout_ns
+
+    def __str__(self):
+        self._update_msg()
+        return str(_repr_pretty_p4runtime(self._entry))
+
+    def _repr_pretty_(self, p, cycle):
+        self._update_msg()
+        p.text(_repr_pretty_p4runtime(self._entry))
+
+    def _update_msg(self):
+        digest_entry = p4runtime_pb2.DigestEntry()
+        digest_entry.digest_id = self.id
+        digest_entry.config.max_timeout_ns = self.max_timeout_ns
+        digest_entry.config.max_list_size = self.max_list_size
+        digest_entry.config.ack_timeout_ns = self.ack_timeout_ns
+        self._entry = digest_entry
+
+    def read(self, function=None):
+        """Generate a P4Runtime Read RPC. Supports wildcard reads (just leave
+        the digest_id as 0).
+        If function is None, returns an iterator. Iterate over it to get all the
+        multicast digest entries (DigestEntry instances) returned by the server.
+        Otherwise, function is applied to all the digest entries returned by the
+        server.
+
+        For example:
+        for c in <self>.read():
+            print(c)
+        The above code is equivalent to the following one-liner:
+        <self>.read(lambda c: print(c))
+        """
+        return super().read(function)
+
+    def _write(self, type_):
+        if self.id == 0:
+            raise UserError("0 is not a valid digest_id for DigestEntry")
+        super()._write(type_)
+
+
 class PacketMetadata:
     def __init__(self, metadata_info_list):
         self._md_info = OrderedDict()
@@ -2658,6 +2751,65 @@ class IdleTimeoutNotification():
                 function(msg)
 
 
+class DigestList():
+    def __init__(self):
+        self.digest_list_queue = queue.Queue()
+
+        def _notification_recv_func(digest_list_queue):
+            while True:
+                msg = client.get_stream_packet("digest", timeout=None)
+                if not msg:
+                    break
+                digest_list_queue.put(msg)
+                # Acknowledge the digest
+                ack = p4runtime_pb2.StreamMessageRequest()
+                ack.digest_ack.digest_id = msg.digest.digest_id
+                ack.digest_ack.list_id = msg.digest.list_id
+                client.stream_out_q.put(ack)
+
+        self.recv_t = Thread(target=_notification_recv_func, args=(self.digest_list_queue, ))
+        self.recv_t.start()
+
+    def sniff(self, function=None, timeout=None):
+        """
+        Return an iterator of DigestList messages.
+        If the function is provided, we do not return an iterator and instead we apply
+        the function to every notification message.
+        """
+        msgs = []
+
+        if timeout is not None and timeout < 0:
+            raise ValueError("Timeout can't be a negative number.")
+
+        if timeout is None:
+            while True:
+                try:
+                    msgs.append(self.digest_list_queue.get(block=True))
+                except KeyboardInterrupt:
+                    # User sends a Ctrl+C -> breaking
+                    break
+
+        else:  # timeout parameter is provided
+            deadline = time.time() + timeout
+            remaining_time = timeout
+            while remaining_time > 0:
+                try:
+                    msgs.append(self.digest_list_queue.get(block=True, timeout=remaining_time))
+                    remaining_time = deadline - time.time()
+                except KeyboardInterrupt:
+                    # User sends an interrupt(e.g., Ctrl+C).
+                    break
+                except queue.Empty:
+                    # No item available on timeout. Exiting
+                    break
+
+        if function is None:
+            return iter(msgs)
+        else:
+            for msg in msgs:
+                function(msg)
+
+
 def Write(input_):
     """
     Reads a WriteRequest from a file (text format) and sends it to the server.
@@ -2853,6 +3005,7 @@ def main():
         "Replica": Replica,
         "MulticastGroupEntry": MulticastGroupEntry,
         "CloneSessionEntry": CloneSessionEntry,
+        "DigestEntry": DigestEntry,
         "APIVersion": APIVersion,
         "global_options": global_options,
     }
@@ -2868,6 +3021,7 @@ def main():
         (P4RuntimeEntity.direct_meter_entry, P4Type.direct_meter, DirectMeterEntry),
         (P4RuntimeEntity.action_profile_member, P4Type.action_profile, ActionProfileMember),
         (P4RuntimeEntity.action_profile_group, P4Type.action_profile, ActionProfileGroup),
+        (P4RuntimeEntity.digest_entry, P4Type.digest, DigestEntry),
     ]
     for entity, p4type, cls in supported_entities:
         user_ns[entity.name] = P4RuntimeEntityBuilder(p4type, entity, cls)
@@ -2877,6 +3031,7 @@ def main():
     user_ns["packet_in"] = PacketIn()  # Singleton packet_in object to handle all packet-in cases
     user_ns["packet_out"] = PacketOut
     user_ns["idle_timeout_notification"] = IdleTimeoutNotification()  # Singleton
+    user_ns["digest_list"] = DigestList()  # Singleton
 
     start_ipython(user_ns=user_ns, config=c, argv=[])
 
