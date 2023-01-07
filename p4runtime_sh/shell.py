@@ -354,13 +354,17 @@ You may also use <self>.set(<f>='<value>')
         return self._fields[fullname]
 
     def __setitem__(self, name, value):
-        field_info = self._get_mf(name)
-        self._mk[name] = self._parse_mf(value, field_info)
-        print(self._mk[name])
+        fullname = self._full_field_name(name)
+        field_info = self._get_mf(fullname)
+        self._mk[fullname] = self._parse_mf(value, field_info)
+        print(self._mk[fullname])
 
     def __getitem__(self, name):
         fullname = self._full_field_name(name)
-        return self._mk.get(fullname, "Unset")
+        f = self._mk.get(fullname, None)
+        if f is None:
+            print("Unset")
+        return f
 
     def _parse_mf(self, s, field_info):
         if type(s) is not str:
