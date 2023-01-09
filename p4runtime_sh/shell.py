@@ -340,23 +340,31 @@ You may also use <self>.set(<f>='<value>')
     def __dir__(self):
         return ["clear"]
 
-    def _get_mf(self, name):
+    def _full_field_name(self, name):
         if name in self._fields:
-            return self._fields[name]
+            return name
         if name in self._fields_suffixes:
-            return self._fields[self._fields_suffixes[name]]
+            return self._fields_suffixes[name]
         raise UserError(
             "'{}' is not a valid match field name, nor a valid unique suffix, "
             "for table '{}'".format(name, self._table_name))
 
+    def _get_mf(self, name):
+        fullname = self._full_field_name(name)
+        return self._fields[fullname]
+
     def __setitem__(self, name, value):
-        field_info = self._get_mf(name)
-        self._mk[name] = self._parse_mf(value, field_info)
-        print(self._mk[name])
+        fullname = self._full_field_name(name)
+        field_info = self._get_mf(fullname)
+        self._mk[fullname] = self._parse_mf(value, field_info)
+        print(self._mk[fullname])
 
     def __getitem__(self, name):
-        _ = self._get_mf(name)
-        print(self._mk.get(name, "Unset"))
+        fullname = self._full_field_name(name)
+        f = self._mk.get(fullname, None)
+        if f is None:
+            print("Unset")
+        return f
 
     def _parse_mf(self, s, field_info):
         if type(s) is not str:
