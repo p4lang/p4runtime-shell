@@ -624,6 +624,7 @@ class Action:
 
     def _from_msg(self, msg):
         assert(self._action_id == msg.action_id)
+        self._param_values.clear()
         for p in msg.params:
             p_name = context.get_param_name(self.action_name, p.param_id)
             self._param_values[p_name] = p
