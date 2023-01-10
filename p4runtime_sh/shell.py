@@ -584,7 +584,7 @@ class Action:
         if name not in self._params:
             raise UserError(
                 "'{}' is not a valid action parameter name for action '{}'".format(
-                    name, self._action_name))
+                    name, self.action_name))
         return self._params[name]
 
     def __setattr__(self, name, value):
@@ -602,7 +602,10 @@ class Action:
 
     def __getitem__(self, name):
         _ = self._get_param(name)
-        print(self._param_values.get(name, "Unset"))
+        f = self._param_values.get(name, None)
+        if f is None:
+            print("Unset")
+        return f
 
     def _parse_param(self, s, param_info):
         if type(s) is not str:
@@ -621,7 +624,6 @@ class Action:
 
     def _from_msg(self, msg):
         assert(self._action_id == msg.action_id)
-        self._params.clear()
         for p in msg.params:
             p_name = context.get_param_name(self.action_name, p.param_id)
             self._param_values[p_name] = p
