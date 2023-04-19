@@ -21,6 +21,7 @@ import logging
 import queue
 import sys
 import threading
+from iterators import TimeoutIterator
 from typing import NamedTuple
 
 from p4.v1 import p4runtime_pb2
@@ -191,6 +192,7 @@ class P4RuntimeClient:
         self.set_up_stream()
 
     def set_up_stream(self):
+        self.signal_q = queue.Queue()
         self.stream_out_q = queue.Queue()
         # queues for different messages
         self.stream_in_q = {
@@ -211,7 +213,12 @@ class P4RuntimeClient:
         def stream_recv_wrapper(stream):
             @parse_p4runtime_error
             def stream_recv():
-                for p in stream:
+                iterator = TimeoutIterator(stream, timeout=1)
+                for p in iterator:
+                    if not self.signal_q.empty():
+                        break
+                    if p == iterator.get_sentinel():
+                        continue
                     if p.HasField("arbitration"):
                         self.stream_in_q["arbitration"].put(p)
                     elif p.HasField("packet"):
@@ -304,6 +311,7 @@ class P4RuntimeClient:
             for k in self.stream_in_q:
                 self.stream_in_q[k].put(None)
         if self.stream_recv_thread:
+            self.signal_q.put(None)
             self.stream_recv_thread.join()
         self.channel.close()
         del self.channel  # avoid a race condition if channel deleted when process terminates
