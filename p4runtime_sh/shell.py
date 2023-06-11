@@ -39,6 +39,7 @@ import queue
 
 context = Context()
 client = None
+verbose = False
 
 
 class UserUsageError(UserError):
@@ -357,13 +358,15 @@ You may also use <self>.set(<f>='<value>')
         fullname = self._full_field_name(name)
         field_info = self._get_mf(fullname)
         self._mk[fullname] = self._parse_mf(value, field_info)
-        print(self._mk[fullname])
+        if verbose:
+            print(self._mk[fullname])
 
     def __getitem__(self, name):
         fullname = self._full_field_name(name)
         f = self._mk.get(fullname, None)
         if f is None:
-            print("Unset")
+            if verbose:
+                print("Unset")
         return f
 
     def _parse_mf(self, s, field_info):
@@ -445,8 +448,9 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = 0
         if transformed:
-            print("LPM value was transformed to conform to the P4Runtime spec "
-                  "(trailing bits must be unset)")
+            if verbose:
+                print("LPM value was transformed to conform to the P4Runtime"
+                      "spec (trailing bits must be unset)")
         mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         return mf
 
@@ -477,8 +481,9 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = barray[i] & mask[i]
         if transformed:
-            print("Ternary value was transformed to conform to the P4Runtime spec "
-                  "(masked off bits must be unset)")
+            if verbose:
+                print("Ternary value was transformed to conform to the"
+                      " P4Runtime spec (masked off bits must be unset)")
         mf.ternary.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         mf.ternary.mask = bytes_utils.make_canonical_if_option_set(mask)
         return mf
@@ -598,13 +603,15 @@ class Action:
     def __setitem__(self, name, value):
         param_info = self._get_param(name)
         self._param_values[name] = self._parse_param(value, param_info)
-        print(self._param_values[name])
+        if verbose:
+            print(self._param_values[name])
 
     def __getitem__(self, name):
         _ = self._get_param(name)
         f = self._param_values.get(name, None)
         if f is None:
-            print("Unset")
+            if verbose:
+                print("Unset")
         return f
 
     def _parse_param(self, s, param_info):
@@ -1077,7 +1084,8 @@ class OneshotAction:
             if type(value) is not int:
                 raise UserError("watch must be an integer")
         elif name == "watch_port":
-            print(type(value), value)
+            if verbose:
+                print(type(value), value)
             if type(value) is not bytes:
                 raise UserError("watch_port must be a byte string")
         super().__setattr__(name, value)
@@ -1601,7 +1609,8 @@ For information about how to read table entries, use <self>.read?
             # TODO(antonin): should we do a better job and handle other cases (a field is set while
             # is_default is set to True)?
             if value is True and self.match._count() > 0:
-                print("Clearing match key because entry is now default")
+                if verbose:
+                    print("Clearing match key because entry is now default")
                 self.match.clear()
         elif name == "member_id":
             self._action_spec_set_member(value)
@@ -2580,7 +2589,8 @@ You may also use <self>.set(<md_name>='<value>')
 
     def __getitem__(self, name):
         _ = self._get_md_info(name)
-        print(self._md.get(name, "Unset"))
+        if verbose:
+            print(self._md.get(name, "Unset"))
 
     def _parse_md(self, value, md_info):
         if type(value) is not str:
