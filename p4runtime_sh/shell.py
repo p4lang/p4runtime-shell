@@ -39,7 +39,6 @@ import queue
 
 context = Context()
 client = None
-verbose = False
 
 
 class UserUsageError(UserError):
@@ -358,14 +357,14 @@ You may also use <self>.set(<f>='<value>')
         fullname = self._full_field_name(name)
         field_info = self._get_mf(fullname)
         self._mk[fullname] = self._parse_mf(value, field_info)
-        if verbose:
+        if context.do_printing:
             print(self._mk[fullname])
 
     def __getitem__(self, name):
         fullname = self._full_field_name(name)
         f = self._mk.get(fullname, None)
         if f is None:
-            if verbose:
+            if context.do_printing:
                 print("Unset")
         return f
 
@@ -448,7 +447,7 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = 0
         if transformed:
-            if verbose:
+            if context.do_printing:
                 print("LPM value was transformed to conform to the P4Runtime"
                       "spec (trailing bits must be unset)")
         mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
@@ -481,7 +480,7 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = barray[i] & mask[i]
         if transformed:
-            if verbose:
+            if context.do_printing:
                 print("Ternary value was transformed to conform to the"
                       " P4Runtime spec (masked off bits must be unset)")
         mf.ternary.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
@@ -603,14 +602,14 @@ class Action:
     def __setitem__(self, name, value):
         param_info = self._get_param(name)
         self._param_values[name] = self._parse_param(value, param_info)
-        if verbose:
+        if context.do_printing:
             print(self._param_values[name])
 
     def __getitem__(self, name):
         _ = self._get_param(name)
         f = self._param_values.get(name, None)
         if f is None:
-            if verbose:
+            if context.do_printing:
                 print("Unset")
         return f
 
@@ -1084,7 +1083,7 @@ class OneshotAction:
             if type(value) is not int:
                 raise UserError("watch must be an integer")
         elif name == "watch_port":
-            if verbose:
+            if context.do_printing:
                 print(type(value), value)
             if type(value) is not bytes:
                 raise UserError("watch_port must be a byte string")
@@ -1609,7 +1608,7 @@ For information about how to read table entries, use <self>.read?
             # TODO(antonin): should we do a better job and handle other cases (a field is set while
             # is_default is set to True)?
             if value is True and self.match._count() > 0:
-                if verbose:
+                if context.do_printing:
                     print("Clearing match key because entry is now default")
                 self.match.clear()
         elif name == "member_id":
@@ -2589,7 +2588,7 @@ You may also use <self>.set(<md_name>='<value>')
 
     def __getitem__(self, name):
         _ = self._get_md_info(name)
-        if verbose:
+        if context.do_printing:
             print(self._md.get(name, "Unset"))
 
     def _parse_md(self, value, md_info):
@@ -2937,7 +2936,8 @@ def setup(device_id=1,
           election_id=(1, 0),
           role_name=None,
           config=None,
-          ssl_options=None):
+          ssl_options=None,
+          do_printing=True):
     global client
     logging.debug("Creating P4Runtime client")
     client = P4RuntimeClient(device_id, grpc_addr, election_id, role_name, ssl_options)
@@ -2975,6 +2975,7 @@ def setup(device_id=1,
 
     logging.debug("Parsing P4Info message")
     context.set_p4info(p4info)
+    context.set_do_printing(do_printing)
 
 
 def teardown():
