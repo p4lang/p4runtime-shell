@@ -40,9 +40,11 @@ import queue
 context = Context()
 client = None
 
+
 def _print(*args, **kwargs):
     if global_options.get_option(Options.verbose):
         print(*args, **kwargs)
+
 
 class UserUsageError(UserError):
     def __init__(self, usage):
