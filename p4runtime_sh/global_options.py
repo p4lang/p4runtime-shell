@@ -20,6 +20,7 @@ from .utils import UserError
 @enum.unique
 class Options(enum.Enum):
     canonical_bytestrings = bool
+    verbose = bool
 
 
 class UnknownOptionName(UserError):
@@ -43,12 +44,17 @@ class InvalidOptionValueType(UserError):
 class GlobalOptions:
     option_defaults = {
         Options.canonical_bytestrings: True,
+        Options.verose: True,
     }
 
     option_helpstrings = {
         Options.canonical_bytestrings: """
 Use byte-padded legacy format for binary strings sent to the P4Runtime server,
 instead of the canonical representation. See P4Runtime specification for details.
+""",
+        Options.verbose: """
+Print a text style representation of the protobuf contents of P4Runtime
+messages while creating them using methods in the p4runtime-shell package.
 """
     }
 

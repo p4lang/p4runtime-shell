@@ -62,10 +62,6 @@ class P4RuntimeEntity(enum.Enum):
 class Context:
     def __init__(self):
         self.p4info = None
-        self.do_printing = True
-
-    def set_do_printing(self, do_printing):
-        self.do_printing = do_printing
 
     def set_p4info(self, p4info):
         self.p4info = p4info

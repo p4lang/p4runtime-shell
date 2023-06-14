@@ -40,6 +40,9 @@ import queue
 context = Context()
 client = None
 
+def _print(*args, **kwargs):
+    if global_options.get_option(Options.verbose):
+        print(*args, **kwargs)
 
 class UserUsageError(UserError):
     def __init__(self, usage):
@@ -357,15 +360,13 @@ You may also use <self>.set(<f>='<value>')
         fullname = self._full_field_name(name)
         field_info = self._get_mf(fullname)
         self._mk[fullname] = self._parse_mf(value, field_info)
-        if context.do_printing:
-            print(self._mk[fullname])
+        _print(self._mk[fullname])
 
     def __getitem__(self, name):
         fullname = self._full_field_name(name)
         f = self._mk.get(fullname, None)
         if f is None:
-            if context.do_printing:
-                print("Unset")
+            _print("Unset")
         return f
 
     def _parse_mf(self, s, field_info):
@@ -447,9 +448,8 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = 0
         if transformed:
-            if context.do_printing:
-                print("LPM value was transformed to conform to the P4Runtime"
-                      "spec (trailing bits must be unset)")
+            _print("LPM value was transformed to conform to the P4Runtime spec "
+                   "(trailing bits must be unset)")
         mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         return mf
 
@@ -480,9 +480,8 @@ You may also use <self>.set(<f>='<value>')
                 transformed = True
                 barray[i] = barray[i] & mask[i]
         if transformed:
-            if context.do_printing:
-                print("Ternary value was transformed to conform to the"
-                      " P4Runtime spec (masked off bits must be unset)")
+            _print("Ternary value was transformed to conform to the P4Runtime spec "
+                   "(masked off bits must be unset)")
         mf.ternary.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         mf.ternary.mask = bytes_utils.make_canonical_if_option_set(mask)
         return mf
@@ -602,15 +601,13 @@ class Action:
     def __setitem__(self, name, value):
         param_info = self._get_param(name)
         self._param_values[name] = self._parse_param(value, param_info)
-        if context.do_printing:
-            print(self._param_values[name])
+        _print(self._param_values[name])
 
     def __getitem__(self, name):
         _ = self._get_param(name)
         f = self._param_values.get(name, None)
         if f is None:
-            if context.do_printing:
-                print("Unset")
+            _print("Unset")
         return f
 
     def _parse_param(self, s, param_info):
@@ -1083,8 +1080,7 @@ class OneshotAction:
             if type(value) is not int:
                 raise UserError("watch must be an integer")
         elif name == "watch_port":
-            if context.do_printing:
-                print(type(value), value)
+            _print(type(value), value)
             if type(value) is not bytes:
                 raise UserError("watch_port must be a byte string")
         super().__setattr__(name, value)
@@ -1608,8 +1604,7 @@ For information about how to read table entries, use <self>.read?
             # TODO(antonin): should we do a better job and handle other cases (a field is set while
             # is_default is set to True)?
             if value is True and self.match._count() > 0:
-                if context.do_printing:
-                    print("Clearing match key because entry is now default")
+                _print("Clearing match key because entry is now default")
                 self.match.clear()
         elif name == "member_id":
             self._action_spec_set_member(value)
@@ -2588,8 +2583,7 @@ You may also use <self>.set(<md_name>='<value>')
 
     def __getitem__(self, name):
         _ = self._get_md_info(name)
-        if context.do_printing:
-            print(self._md.get(name, "Unset"))
+        _print(self._md.get(name, "Unset"))
 
     def _parse_md(self, value, md_info):
         if type(value) is not str:
@@ -2937,7 +2931,7 @@ def setup(device_id=1,
           role_name=None,
           config=None,
           ssl_options=None,
-          do_printing=True):
+          verbose=True):
     global client
     logging.debug("Creating P4Runtime client")
     client = P4RuntimeClient(device_id, grpc_addr, election_id, role_name, ssl_options)
@@ -2975,7 +2969,7 @@ def setup(device_id=1,
 
     logging.debug("Parsing P4Info message")
     context.set_p4info(p4info)
-    context.set_do_printing(do_printing)
+    global_options["verbose"] = verbose
 
 
 def teardown():
