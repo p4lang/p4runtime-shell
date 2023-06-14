@@ -17,7 +17,6 @@ import enum
 from .utils import UserError
 
 
-@enum.unique
 class Options(enum.Enum):
     canonical_bytestrings = bool
     verbose = bool
@@ -44,7 +43,7 @@ class InvalidOptionValueType(UserError):
 class GlobalOptions:
     option_defaults = {
         Options.canonical_bytestrings: True,
-        Options.verose: True,
+        Options.verbose: True,
     }
 
     option_helpstrings = {

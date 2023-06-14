@@ -29,7 +29,7 @@ from p4runtime_sh.p4runtime import (P4RuntimeClient, P4RuntimeException, parse_p
 from p4.v1 import p4runtime_pb2
 from p4.config.v1 import p4info_pb2
 from . import bytes_utils
-from . global_options import global_options
+from . global_options import global_options, Options
 from .context import P4RuntimeEntity, P4Type, Context
 from .utils import UserError, InvalidP4InfoError
 import google.protobuf.text_format
