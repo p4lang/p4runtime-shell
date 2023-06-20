@@ -13,7 +13,7 @@
 # limitations under the License.
 #
 
-from ipaddr import IPv4Address, IPv6Address, AddressValueError
+from ipaddress import IPv4Address, IPv6Address, AddressValueError
 from . global_options import global_options, Options
 from .utils import UserError
 
