@@ -31,7 +31,7 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
     - name: Build and push p4lang/p4runtime-sh to local registry
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         tags: localhost:5000/p4lang/p4runtime-sh
@@ -39,7 +39,7 @@ jobs:
         cache-from: type=gha,scope=p4runtime-sh
         cache-to: type=gha,scope=p4runtime-sh,mode=max
     - name: Build and export p4lang/p4runtime-sh-dev to Docker
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: Dockerfile.dev
@@ -58,7 +58,7 @@ jobs:
         docker run $ci_env p4lang/p4runtime-sh-dev bash -c "source venv/bin/activate && nose2 --with-coverage p4runtime_sh config_builders && codecov"
     - name: Build and push p4lang/p4runtime-sh to Dockerhub if needed
       if: ${{ github.repository == 'p4lang/p4runtime-shell' && github.event_name == 'push' }}
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v6
       with:
         context: .
         push: true
