@@ -289,7 +289,7 @@ class P4RuntimeClient:
         with open(p4info_path, 'r') as f1:
             with open(bin_path, 'rb') as f2:
                 try:
-                    google.protobuf.text_format.Merge(f1.read(), req.config.p4info)
+                    google.protobuf.text_format.Merge(f1.read(), req.config.p4info, allow_unknown_field=True)
                 except google.protobuf.text_format.ParseError:
                     logging.error("Error when parsing P4Info")
                     raise
