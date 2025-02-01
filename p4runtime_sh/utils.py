@@ -1,3 +1,6 @@
+# Copyright 2019 Antonin Bas
+# SPDX-License-Identifier: Apache-2.0
+
 # See https://stackoverflow.com/a/32997046
 def my_partialmethod(func, *args1, **kwargs1):
     def method(self, *args2, **kwargs2):
