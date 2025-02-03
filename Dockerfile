@@ -1,3 +1,5 @@
+# Copyright 2019 Antonin Bas
+# SPDX-License-Identifier: Apache-2.0
 FROM ubuntu:22.04 AS deps
 
 SHELL ["/bin/bash", "-c"]
