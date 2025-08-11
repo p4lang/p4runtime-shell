@@ -100,6 +100,9 @@ python3 -m p4runtime_sh --grpc-addr <server IP>:<server port> \
   --device-id 0 --election-id 0,1 --config <p4info.txt>,<pipeline config>
 ```
 
+The most recent version published that can be installed in this way is 0.0.4.
+
+
 ## Available commands
 
 `tables`, `actions`, `action_profiles`, `counters`, `direct_counters`, `meters`,
