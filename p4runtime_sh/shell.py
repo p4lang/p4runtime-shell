@@ -1249,7 +1249,7 @@ class _CounterData:
 class _MeterConfig:
     @staticmethod
     def attrs():
-        return ["cir", "cburst", "pir", "pburst"]
+        return ["cir", "cburst", "pir", "pburst", "eburst"]
 
     def __init__(self, meter_name, meter_type):
         self._meter_name = meter_name
@@ -1430,7 +1430,7 @@ To unset it, use <self>.counter_data = None or <self>.clear_counter_data().
 """
         if self._direct_meter is not None:
             self.__doc__ += """
-To access the meter config, use <self>.meter_config.<cir|cburst|pir|pburst>.
+To access the meter config, use <self>.meter_config.<cir|cburst|pir|pburst|eburst>.
 To unset it, use <self>.meter_config = None or <self>.clear_meter_config().
 """
         if ap is None:
@@ -2090,6 +2090,7 @@ Access meter rates and burst sizes with:
 <self>.cburst
 <self>.pir
 <self>.pburst
+<self>.eburst
 
 To read from the meter, use <self>.read
 To write to the meter, use <self>.modify
@@ -2160,6 +2161,7 @@ Access meter rates and burst sizes with:
 <self>.cburst
 <self>.pir
 <self>.pburst
+<self>.eburst
 
 To read from the meter, use <self>.read
 To write to the meter, use <self>.modify
