@@ -49,3 +49,9 @@ pip list
 
 The `p4runtime-shell` with the new latest version should have been
 installed, along with many packages it depends upon.
+
+Note: The reason that pushing a tag to this repository causes a new
+release to be published to pypi.org is because of the Github action
+defined in the file
+[`.github/workflows/pypi.yml`](.github/workflows/pypi.yml) of this
+repository.
