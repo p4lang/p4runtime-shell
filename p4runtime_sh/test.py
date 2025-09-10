@@ -380,6 +380,54 @@ action {
 
         self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
 
+    @nose2.tools.params(
+      ("0xfaafe/16", "\\x0f\\xaa\\xf0", 16, "0x3/1", "\\x02", 1),
+      ("0xfaafe/20", "\\x0f\\xaa\\xfe", 20, "0x3/2", "\\x03", 2),
+      ("0xfaafe/8", "\\x0f\\xa0\\x00", 8, "0x1/1", "\\x00", 1),
+      ("0xfaafe/1", "\\x08\\x00\\x00", 1, "0x1/2", "\\x01", 2))
+    def test_table_entry_lpm_bitwidth_not_multiply_of_8(
+      self, input_20, value_20, length_20, input_2, value_2, length_2
+    ):
+        te = sh.TableEntry("LpmTwo")(action="actionA")
+        te.match["header_test.field20"] = input_20
+        te.match["header_test.field2"] = input_2
+        te.action["param"] = "aa:bb:cc:dd:ee:ff"
+        te.insert()
+
+        # Cannot use format here because it would require escaping all braces,
+        # which would make wiriting tests much more annoying
+        expected_entry = """
+table_id: 33567647
+match {
+  field_id: 1
+  lpm {
+    value: "%s"
+    prefix_len: %s
+  }
+}
+match {
+  field_id: 2
+  lpm {
+    value: "%s"
+    prefix_len: %s
+  }
+}
+action {
+  action {
+    action_id: 16783703
+    params {
+      param_id: 1
+      value: "\\xaa\\xbb\\xcc\\xdd\\xee\\xff"
+    }
+  }
+}
+""" % (value_20, length_20, value_2, length_2)
+
+        expected_req = self.make_write_request(
+            p4runtime_pb2.Update.INSERT, P4RuntimeEntity.table_entry, expected_entry)
+
+        self.servicer.Write.assert_called_once_with(ProtoCmp(expected_req), ANY)
+
     def test_table_entry_lpm_dont_care(self):
         te = sh.TableEntry("LpmOne")
         with self.assertRaisesRegex(UserError, "LPM don't care match"):
