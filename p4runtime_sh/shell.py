@@ -1251,8 +1251,9 @@ class _MeterConfig:
     def attrs():
         return ["cir", "cburst", "pir", "pburst", "eburst"]
 
-    def __init__(self, meter_name, meter_type):
+    def __init__(self, meter_name, meter_unit, meter_type):
         self._meter_name = meter_name
+        self._meter_unit = meter_unit
         self._meter_type = meter_type
         self._msg = p4runtime_pb2.MeterConfig()
         self._attrs = _MeterConfig.attrs()
@@ -1288,18 +1289,18 @@ class _MeterConfig:
         p.text(str(self.msg()))
 
     @classmethod
-    def set_param(cls, instance, meter_name, meter_type, name, value):
+    def set_param(cls, instance, meter_name, meter_unit, meter_type, name, value):
         if instance is None:
-            d = cls(meter_name, meter_type)
+            d = cls(meter_name, meter_unit, meter_type)
         else:
             d = instance
         setattr(d, name, value)
         return d
 
     @classmethod
-    def get_param(cls, instance, meter_name, meter_type, name):
+    def get_param(cls, instance, meter_name, meter_unit, meter_type, name):
         if instance is None:
-            d = cls(meter_name, meter_type)
+            d = cls(meter_name, meter_unit, meter_type)
         else:
             d = instance
         r = getattr(d, name)
@@ -1662,7 +1663,10 @@ For information about how to read table entries, use <self>.read?
                 raise UserError("Table has no direct meter")
             if self._meter_config is None:
                 self._meter_config = _MeterConfig(
-                    self._direct_meter.preamble.name, self._direct_meter.spec.unit)
+                    self._direct_meter.preamble.name,
+                    self._direct_meter.spec.unit,
+                    self._direct_meter.spec.type
+                )
             return self._meter_config
         if name == "time_since_last_hit":
             if self._idle_timeout_behavior is None:
@@ -1716,7 +1720,10 @@ For information about how to read table entries, use <self>.read?
             self._counter_data = None
         if msg.HasField('meter_config'):
             self._meter_config = _MeterConfig(
-                self._direct_meter.preamble.name, self._direct_meter.spec.unit)
+                self._direct_meter.preamble.name,
+                self._direct_meter.spec.unit,
+                self._direct_meter.spec.type
+            )
             self._meter_config._from_msg(msg.meter_config)
         else:
             self._meter_config = None
@@ -2012,7 +2019,8 @@ To write to the counter, use <self>.modify
 class _MeterEntryBase(_P4EntityBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._meter_type = self._info.spec.unit
+        self._meter_unit = self._info.spec.unit
+        self._meter_type = self._info.spec.type
         self._config = None
 
     def __dir__(self):
@@ -2031,7 +2039,7 @@ class _MeterEntryBase(_P4EntityBase):
             raise UserError("Cannot change meter name")
         if name in _MeterConfig.attrs():
             self._config = _MeterConfig.set_param(
-                self._config, self.name, self._meter_type, name, value)
+                self._config, self.name, self._meter_unit, self._meter_type, name, value)
             return
         if name == "config":
             if value is None:
@@ -2043,18 +2051,18 @@ class _MeterEntryBase(_P4EntityBase):
     def __getattr__(self, name):
         if name in _MeterConfig.attrs():
             self._config, r = _MeterConfig.get_param(
-                self._config, self.name, self._meter_type, name)
+                self._config, self.name, self._meter_unit, self._meter_type, name)
             return r
         if name == "config":
             if self._config is None:
-                self._config = _MeterConfig(self.name, self._meter_type)
+                self._config = _MeterConfig(self.name, self._meter_unit, self._meter_type)
             return self._config
         return super().__getattr__(name)
 
     def _from_msg(self, msg):
         self._entry.CopyFrom(msg)
         if msg.HasField('config'):
-            self._config = _MeterConfig(self.name, self._meter_type)
+            self._config = _MeterConfig(self.name, self._meter_unit, self._meter_type)
             self._config._from_msg(msg.config)
         else:
             self._config = None
