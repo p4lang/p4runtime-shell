@@ -440,19 +440,36 @@ You may also use <self>.set(<f>='<value>')
 
         barray = bytearray(prefix)
         transformed = False
-        r = length % 8
-        byte_mask = 0xff & ((0xff << (8 - r)))
-        if barray[first_byte_masked] & byte_mask != barray[first_byte_masked]:
-            transformed = True
-            barray[first_byte_masked] = barray[first_byte_masked] & byte_mask
+        # When prefix mask and field bit width are not aligned to the size of a
+        # byte, we need to make sure mask is applied to the all bytes in prefix
+        # that should be masked.
+        # Therefore, we will create a byte array mask for all the bits in the
+        # field and apply it to entire prefix, zeroing out the bits that should
+        # not be part of the prefix. We can skip bytes that are fully inside
+        # the mask.
+        mask = ((1 << length) - 1)   # Create mask for the prefix length.
+        mask = mask << (field_info.bitwidth - length)  # Shift left to the correct position.
+        nbytes = (field_info.bitwidth + 7) // 8
+        bytes_mask = bytearray(mask.to_bytes(nbytes, byteorder='big'))
 
-        for i in range(first_byte_masked + 1, len(prefix)):
-            if barray[i] != 0:
+        # Prefix len is aligned to num of byte needed to represent bitwidth in parsing stage.
+        if len(bytes_mask) != len(prefix):  # Should not happen, safety check.
+            raise UserError("Invalid prefix length")
+
+        idxs_to_apply_mask = list(range(first_byte_masked, len(bytes_mask)))
+        if first_byte_masked > 0:
+            idxs_to_apply_mask.insert(0, 0)  # Always apply mask to first byte.
+
+        transformed = False
+        for i in idxs_to_apply_mask:
+            if barray[i] & bytes_mask[i] != barray[i]:
                 transformed = True
-                barray[i] = 0
+                barray[i] = barray[i] & bytes_mask[i]
+
         if transformed:
             _print("LPM value was transformed to conform to the P4Runtime spec "
                    "(trailing bits must be unset)")
+
         mf.lpm.value = bytes(bytes_utils.make_canonical_if_option_set(barray))
         return mf
 
