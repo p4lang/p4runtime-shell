@@ -1219,6 +1219,78 @@ clone_session_entry {
         actual_msg = self.servicer.stored_packet_out.get(block=True, timeout=1)
         self.assertEqual(actual_msg, expected_msg)
 
+    def test_meter_entry_spec_type_two_rate(self):
+        # MeterA has TWO_RATE_THREE_COLOR (default, type=0): eburst must be 0.
+        ce = sh.MeterEntry("MeterA")
+        ce.index = 1
+        ce.cir = 100
+        ce.cburst = 200
+        ce.pir = 300
+        ce.pburst = 400
+        ce.modify()
+
+        ce2 = sh.MeterEntry("MeterA")
+        ce2.index = 2
+        ce2.cir = 100
+        ce2.cburst = 200
+        ce2.pir = 300
+        ce2.pburst = 400
+        ce2.eburst = 50
+        with self.assertRaisesRegex(UserError, "TWO_RATE_THREE_COLOR.*eburst must be 0"):
+            ce2.modify()
+
+    def test_meter_entry_spec_type_single_rate_three_color(self):
+        # MeterB has SINGLE_RATE_THREE_COLOR: cir == pir and cburst == pburst.
+        ce = sh.MeterEntry("MeterB")
+        ce.index = 1
+        ce.cir = 100
+        ce.cburst = 200
+        ce.pir = 100
+        ce.pburst = 200
+        ce.eburst = 50
+        ce.modify()
+
+        ce2 = sh.MeterEntry("MeterB")
+        ce2.index = 2
+        ce2.cir = 100
+        ce2.cburst = 200
+        ce2.pir = 300
+        ce2.pburst = 400
+        with self.assertRaisesRegex(UserError,
+                                    "SINGLE_RATE_THREE_COLOR.*cir must equal pir"):
+            ce2.modify()
+
+    def test_meter_entry_spec_type_single_rate_two_color(self):
+        # MeterC has SINGLE_RATE_TWO_COLOR: cir == pir, cburst == pburst, eburst == 0.
+        ce = sh.MeterEntry("MeterC")
+        ce.index = 1
+        ce.cir = 100
+        ce.cburst = 200
+        ce.pir = 100
+        ce.pburst = 200
+        ce.modify()
+
+        ce2 = sh.MeterEntry("MeterC")
+        ce2.index = 2
+        ce2.cir = 100
+        ce2.cburst = 200
+        ce2.pir = 100
+        ce2.pburst = 200
+        ce2.eburst = 50
+        with self.assertRaisesRegex(UserError,
+                                    "SINGLE_RATE_TWO_COLOR.*eburst must be 0"):
+            ce2.modify()
+
+        ce3 = sh.MeterEntry("MeterC")
+        ce3.index = 3
+        ce3.cir = 100
+        ce3.cburst = 200
+        ce3.pir = 999
+        ce3.pburst = 200
+        with self.assertRaisesRegex(UserError,
+                                    "SINGLE_RATE_TWO_COLOR.*cir must equal pir"):
+            ce3.modify()
+
 
 class P4RuntimeClientTestCase(BaseTestCase):
     def setUp(self):

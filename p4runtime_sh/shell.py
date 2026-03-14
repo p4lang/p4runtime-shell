@@ -1304,6 +1304,37 @@ class _MeterConfig:
     def _repr_pretty_(self, p, cycle):
         p.text(str(self.msg()))
 
+    def validate(self, spec_type):
+        """Validate config fields against the meter's spec.type constraints.
+
+        TWO_RATE_THREE_COLOR: eburst must be 0.
+        SINGLE_RATE_THREE_COLOR: cir == pir and cburst == pburst.
+        SINGLE_RATE_TWO_COLOR: cir == pir, cburst == pburst, and eburst must be 0.
+        """
+        m = self._msg
+        t = p4info_pb2.MeterSpec.Type
+        if spec_type == t.Value("TWO_RATE_THREE_COLOR"):
+            if m.eburst != 0:
+                raise UserError(
+                    "Meter '{}' has type TWO_RATE_THREE_COLOR: eburst must be 0".format(
+                        self._meter_name))
+        elif spec_type == t.Value("SINGLE_RATE_THREE_COLOR"):
+            if m.cir != m.pir or m.cburst != m.pburst:
+                raise UserError(
+                    "Meter '{}' has type SINGLE_RATE_THREE_COLOR: "
+                    "cir must equal pir and cburst must equal pburst".format(
+                        self._meter_name))
+        elif spec_type == t.Value("SINGLE_RATE_TWO_COLOR"):
+            if m.cir != m.pir or m.cburst != m.pburst:
+                raise UserError(
+                    "Meter '{}' has type SINGLE_RATE_TWO_COLOR: "
+                    "cir must equal pir and cburst must equal pburst".format(
+                        self._meter_name))
+            if m.eburst != 0:
+                raise UserError(
+                    "Meter '{}' has type SINGLE_RATE_TWO_COLOR: eburst must be 0".format(
+                        self._meter_name))
+
     @classmethod
     def set_param(cls, instance, meter_name, meter_type, name, value):
         if instance is None:
@@ -1796,6 +1827,8 @@ For information about how to read table entries, use <self>.read?
             raise UserError(
                 "Match key must be empty for default entry, use <self>.is_default = False "
                 "or <self>.match.clear (whichever one is appropriate)")
+        if self._meter_config is not None and self._direct_meter is not None:
+            self._meter_config.validate(self._direct_meter.spec.type)
 
     def clear_action(self):
         """Clears the action spec for the TableEntry."""
@@ -2030,6 +2063,7 @@ class _MeterEntryBase(_P4EntityBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._meter_type = self._info.spec.unit
+        self._meter_spec_type = self._info.spec.type
         self._config = None
 
     def __dir__(self):
@@ -2081,6 +2115,10 @@ class _MeterEntryBase(_P4EntityBase):
             self._entry.ClearField('config')
         else:
             self._entry.config.CopyFrom(self._config.msg())
+
+    def _validate_msg(self):
+        if self._config is not None:
+            self._config.validate(self._meter_spec_type)
 
     def clear_config(self):
         """Clear the meter config, same as <self>.config = None"""
