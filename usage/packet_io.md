@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2021 Yi Tseng
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Packet IO
 
 ## Prepare P4 program with packet IO support

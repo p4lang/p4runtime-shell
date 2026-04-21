@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-# Copyright 2019 Antonin Bas
+# SPDX-FileCopyrightText: 2019 Antonin Bas
+#
 # SPDX-License-Identifier: Apache-2.0
 
 source $VENV/bin/activate

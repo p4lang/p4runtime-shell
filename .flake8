@@ -1,2 +1,6 @@
+# SPDX-FileCopyrightText: 2019 Antonin Bas
+#
+# SPDX-License-Identifier: Apache-2.0
+
 [flake8]
 max-line-length = 100

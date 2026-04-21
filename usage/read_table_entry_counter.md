@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2020 David Gengenbach
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 ## Read `counter_data` for `table_entries`
 
 This example uses the [basic tutorial for Stratum](https://github.com/stratum/tutorial/tree/master/basic).

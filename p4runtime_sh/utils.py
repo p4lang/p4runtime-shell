@@ -1,4 +1,5 @@
-# Copyright 2019 Antonin Bas
+# SPDX-FileCopyrightText: 2019 Antonin Bas
+#
 # SPDX-License-Identifier: Apache-2.0
 
 # See https://stackoverflow.com/a/32997046

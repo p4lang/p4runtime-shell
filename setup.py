@@ -1,4 +1,5 @@
-# Copyright 2021 Yi Tseng
+# SPDX-FileCopyrightText: 2021 Yi Tseng
+#
 # SPDX-License-Identifier: Apache-2.0
 
 import setuptools
