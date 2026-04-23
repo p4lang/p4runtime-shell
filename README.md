@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2019 Antonin Bas
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # A shell for P4Runtime
 
 ![Build Status](https://github.com/p4lang/p4runtime-shell/workflows/Test/badge.svg?branch=main&event=push)

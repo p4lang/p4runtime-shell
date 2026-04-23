@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2019 Antonin Bas
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
 ```python
 *** Welcome to the IPython shell for P4Runtime ***
 P4Runtime sh >>> mcge = multicast_group_entry(1)

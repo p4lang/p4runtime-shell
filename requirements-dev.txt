@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2019 Antonin Bas
+#
+# SPDX-License-Identifier: Apache-2.0
+
 flake8==3.8.4
 nose2==0.9.2
 callee==0.3.1
