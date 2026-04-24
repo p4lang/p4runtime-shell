@@ -4,12 +4,12 @@
 
 [build-system]
 requires = [
-    "setuptools",
+    "setuptools>=61.2",
     "setuptools_scm[toml]",
     "setuptools_scm_git_archive",
     "wheel",
 ]
-build-backend = 'setuptools.build_meta'
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "p4runtime-shell"
@@ -39,11 +39,14 @@ content-type = "text/markdown; charset=UTF-8"
 [project.urls]
 Homepage = "https://github.com/p4lang/p4runtime-shell"
 
-[tool.setuptools_scm]
+[tool.setuptools]
 packages = ["p4runtime_sh"]
 platforms = "any"
 license-files = ["LICENSES"]
 include-package-data = false
+include-package-data = false
+
+[tool.setuptools_scm]
 root = "./"
 # use current tag and not next one
 version_scheme = "post-release"
