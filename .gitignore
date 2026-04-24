@@ -12,3 +12,4 @@ dist
 .eggs
 .vscode
 gh-md-toc
+uv.lock
