@@ -41,7 +41,6 @@ Homepage = "https://github.com/p4lang/p4runtime-shell"
 
 [tool.setuptools]
 packages = ["p4runtime_sh"]
-platforms = "any"
 license-files = ["LICENSES"]
 include-package-data = false
 
