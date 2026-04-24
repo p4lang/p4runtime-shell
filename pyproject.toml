@@ -44,7 +44,6 @@ packages = ["p4runtime_sh"]
 platforms = "any"
 license-files = ["LICENSES"]
 include-package-data = false
-include-package-data = false
 
 [tool.setuptools_scm]
 root = "./"
