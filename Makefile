@@ -17,3 +17,12 @@ toc:
 .PHONY: clean
 clean:
 	rm -rf gh-md-toc
+
+.PHONY: set-dev
+set-dev:
+	@echo "Installing dev-dependencies..."
+	# Set up uv for Python dependency management.
+	# TODO: Consider using a system-provided package here.
+	sudo apt-get install -y curl
+	curl -LsSf https://astral.sh/uv/0.6.12/install.sh | sh
+	export PATH="${PATH}:${HOME}/.local/bin" && uv sync && uv tool update-shell && uv pip install -r requirements-dev.txt

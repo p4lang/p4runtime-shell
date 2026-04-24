@@ -12,6 +12,18 @@ on:
     - main
 
 jobs:
+  verify-licenses:
+    runs-on: ubuntu-latest
+    name: Validate that all files have copyright and license info
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install REUSE
+        run: |
+          make set-dev
+          uv pip install reuse
+      - name: Validate presence of copyright and license info (python w/reuse)
+        run: |
+          uv run reuse lint
   test:
     runs-on: ubuntu-latest
     # Local registry where we output p4lang/p4runtime-sh so that it can be used
@@ -23,7 +35,7 @@ jobs:
           - 5000:5000
     steps:
     - name: Check-out code
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
       with:
