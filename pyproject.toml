@@ -11,7 +11,39 @@ requires = [
 ]
 build-backend = 'setuptools.build_meta'
 
+[project]
+name = "p4runtime-shell"
+description = "The P4Runtime shell"
+authors = [{name = "P4 API Working Group", email = "p4-api@lists.p4.org"}]
+license = {text = "Apache-2.0"}
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.6"
+dependencies = [
+    "jedi == 0.17.2",
+    "ipython >= 7.31.1, == 7.31.*; python_version>='3.7'",
+    "ipython >= 7.16.3, == 7.16.*; python_version<'3.7'",
+    "protobuf >= 3.15.0, < 3.21.0",
+    "grpcio >= 1.35.0",
+    "p4runtime == 1.4.1",
+]
+dynamic = ["version"]
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown; charset=UTF-8"
+
+[project.urls]
+Homepage = "https://github.com/p4lang/p4runtime-shell"
+
 [tool.setuptools_scm]
+packages = ["p4runtime_sh"]
+platforms = "any"
+license-files = ["LICENSES"]
+include-package-data = false
 root = "./"
 # use current tag and not next one
 version_scheme = "post-release"
