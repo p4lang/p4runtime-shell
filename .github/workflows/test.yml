@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Validate that all files have copyright and license info
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install REUSE
         run: |
           make set-dev
@@ -35,7 +35,7 @@ jobs:
           - 5000:5000
     steps:
     - name: Check-out code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v4
       with:
