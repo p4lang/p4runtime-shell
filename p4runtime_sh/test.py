@@ -421,6 +421,13 @@ action {
         with self.assertRaisesRegex(UserError, "LPM don't care match"):
             te.match["header_test.field32"] = "10.0.0.0/0"
 
+    @nose2.tools.params("abc", "")
+    def test_table_entry_lpm_invalid_prefix_length(self, length):
+        te = sh.TableEntry("LpmOne")
+        with self.assertRaises(UserError) as error:
+            te.match["header_test.field32"] = "10.0.0.0/{}".format(length)
+        self.assertEqual(str(error.exception), "'{}' is not a valid prefix length".format(length))
+
     @nose2.tools.params(("10.0.0.1 &&& 0xff0000ff", "\\x0a\\x00\\x00\\x01", "\\xff\\x00\\x00\\xff"),
                         ("10.0.0.1 &&& 0xff000000", "\\x0a\\x00\\x00\\x00", "\\xff\\x00\\x00\\x00"))
     def test_table_entry_ternary(self, input_, value, mask):
@@ -529,6 +536,14 @@ action {
         te = sh.TableEntry("RangeOne")
         with self.assertRaisesRegex(UserError, "Invalid range match"):
             te.match["header_test.field32"] = "77..22"
+
+    @nose2.tools.params("10", "10..20..30")
+    def test_table_entry_range_invalid_syntax(self, value):
+        te = sh.TableEntry("RangeOne")
+        with self.assertRaises(UserError) as error:
+            te.match["header_test.field32"] = value
+        self.assertEqual(str(error.exception),
+                         "'{}' does not specify a valid range, use '<start>..<end>'".format(value))
 
     def test_table_entry_optional(self):
         te = sh.TableEntry("OptionalOne")(action="actionA")
