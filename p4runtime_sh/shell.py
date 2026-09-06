@@ -408,7 +408,7 @@ You may also use <self>.set(<f>='<value>')
         try:
             length = int(length)
         except ValueError:
-            raise UserError("'{}' is not a valid prefix length").format(length)
+            raise UserError("'{}' is not a valid prefix length".format(length))
 
         return self._sanitize_and_convert_mf_lpm(prefix, length, field_info)
 
@@ -499,8 +499,8 @@ You may also use <self>.set(<f>='<value>')
             start, end = s.split('..')
             start, end = start.strip(), end.strip()
         except ValueError:
-            raise UserError("'{}' does not specify a valid range, use '<start>..<end>'").format(
-                s)
+            raise UserError("'{}' does not specify a valid range, use '<start>..<end>'".format(
+                s))
 
         start = bytes_utils.parse_value(start, field_info.bitwidth)
         end = bytes_utils.parse_value(end, field_info.bitwidth)
