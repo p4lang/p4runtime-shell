@@ -480,6 +480,30 @@ meters {
   }
   size: 1024
 }
+meters {
+  preamble {
+    id: 335597388
+    name: "MeterB"
+    alias: "MeterB"
+  }
+  spec {
+    unit: PACKETS
+    type: SINGLE_RATE_THREE_COLOR
+  }
+  size: 1024
+}
+meters {
+  preamble {
+    id: 335597389
+    name: "MeterC"
+    alias: "MeterC"
+  }
+  spec {
+    unit: BYTES
+    type: SINGLE_RATE_TWO_COLOR
+  }
+  size: 1024
+}
 direct_meters {
   preamble {
     id: 352326600
