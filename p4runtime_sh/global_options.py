@@ -55,7 +55,7 @@ messages while creating them using methods in the p4runtime-shell package.
     def reset(self):
         """Reset all options to their defaults."""
         for option in Options:
-            assert(option in GlobalOptions.option_defaults)
+            assert option in GlobalOptions.option_defaults
             self._values[option] = GlobalOptions.option_defaults[option]
 
     def _supported_options_as_str(self):
@@ -102,7 +102,7 @@ To reset all options to their default value, use global_options.reset
             option = Options[name]
         except KeyError:
             raise UnknownOptionName(name)
-        if type(value) != option.value:
+        if type(value) is not option.value:
             raise InvalidOptionValueType(option, value)
         self.set_option(option, value)
 

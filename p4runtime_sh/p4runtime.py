@@ -24,7 +24,7 @@ class P4RuntimeErrorFormatException(Exception):
 # Used to iterate over the p4.Error messages in a gRPC error Status object
 class P4RuntimeErrorIterator:
     def __init__(self, grpc_error):
-        assert(grpc_error.code() == grpc.StatusCode.UNKNOWN)
+        assert grpc_error.code() == grpc.StatusCode.UNKNOWN
         self.grpc_error = grpc_error
 
         error = None
@@ -71,7 +71,7 @@ class P4RuntimeErrorIterator:
 # documentation for more details on error-reporting.
 class P4RuntimeWriteException(Exception):
     def __init__(self, grpc_error):
-        assert(grpc_error.code() == grpc.StatusCode.UNKNOWN)
+        assert grpc_error.code() == grpc.StatusCode.UNKNOWN
         super().__init__()
         self.errors = []
         try:
