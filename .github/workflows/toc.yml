@@ -13,7 +13,7 @@ on:
 
 jobs:
   toc:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
     - name: Check-out code
       uses: actions/checkout@v7

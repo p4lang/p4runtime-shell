@@ -13,7 +13,7 @@ on:
 
 jobs:
   verify-licenses:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     name: Validate that all files have copyright and license info
     steps:
       - uses: actions/checkout@v7
@@ -25,7 +25,7 @@ jobs:
         run: |
           uv run reuse lint
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Local registry where we output p4lang/p4runtime-sh so that it can be used
     # to build p4lang/p4runtime-sh-dev.
     services:
