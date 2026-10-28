@@ -26,9 +26,9 @@ dependencies = [
     "jedi == 0.17.2",
     "ipython >= 7.31.1, == 7.31.*; python_version>='3.7'",
     "ipython >= 7.16.3, == 7.16.*; python_version<'3.7'",
-    "protobuf >= 3.15.0, < 3.21.0",
+    "protobuf >= 3.15.0, < 7.37.0",
     "grpcio >= 1.35.0",
-    "p4runtime == 1.4.1",
+    "p4runtime >= 1.4.1",
 ]
 dynamic = ["version"]
 
