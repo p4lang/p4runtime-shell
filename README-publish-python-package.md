@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2025 Andy Fingerhut
 
-SPDX-License-Identifier: Apache-2.0
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # Notes on publishing new version of Python package for p4runtime-shell
