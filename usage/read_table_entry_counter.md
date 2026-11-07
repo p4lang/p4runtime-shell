@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2020 David Gengenbach
 
-SPDX-License-Identifier: Apache-2.0
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 ## Read `counter_data` for `table_entries`

@@ -1,7 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2019 Antonin Bas
 
-SPDX-License-Identifier: Apache-2.0
+SPDX-License-Identifier: CC-BY-4.0
 -->
 
 # A shell for P4Runtime
